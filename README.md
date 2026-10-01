@@ -53,7 +53,7 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 | -- | -- | -- |
 | `--protocol` | `https` | リポジトリ取得プロトコル（`https` / `ssh`） |
 | `--ssh-name` | `github.com` | ssh の URL `git@<ssh-name>:<org>/<repo>.git` のホスト部分。`~/.ssh/config` の `Host` エイリアス名を指定する（アカウントごとに鍵を使い分ける用途）。`--protocol ssh` のときだけ指定できる（https で指定するとエラー） |
-| `--org` | `amagrammers` | 取得元の GitHub org |
+| `--org` | `amagrammers` | 取得元の GitHub org（aidd-script 自身は public のため、この指定に依らず `https://github.com/amagrammers/aidd-script.git` 固定） |
 | `--branch` | `main` | 取得元ブランチ |
 
 例: `.\aidd-setup.ps1 --org rgp-lab`

@@ -59,10 +59,12 @@ if [ -n "$SSH_NAME" ] && [ "$PROTOCOL" != "ssh" ]; then
 fi
 
 case "$PROTOCOL" in
-  https) AIDD_SCRIPT_REPO_URL="https://github.com/${ORG}/aidd-script.git" ;;
-  ssh)   AIDD_SCRIPT_REPO_URL="git@${SSH_NAME:-github.com}:${ORG}/aidd-script.git" ;;
+  https|ssh) ;;
   *) echo "[setup] --protocol は https か ssh のいずれかです: $PROTOCOL" >&2; exit 1 ;;
 esac
+
+# aidd-script は public のため、--org / --protocol / --ssh-name に依らず固定の https URL から取得する。
+AIDD_SCRIPT_REPO_URL="https://github.com/amagrammers/aidd-script.git"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "[setup] このスクリプトは macOS 専用です。Linux / WSL は setup.sh を使ってください。" >&2

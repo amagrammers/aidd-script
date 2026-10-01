@@ -42,14 +42,8 @@ if ($SshName -and $Protocol -ne 'ssh') {
     throw '[setup] --ssh-name は --protocol ssh のときだけ指定できます。'
 }
 
-switch ($Protocol) {
-    'https' { $AiddScriptRepoUrl = "https://github.com/$Org/aidd-script.git" }
-    'ssh'   {
-        $sshHost = if ($SshName) { $SshName } else { 'github.com' }
-        # "$sshHost:" は変数名のスコープ修飾と解釈されるため ${} で区切る
-        $AiddScriptRepoUrl = "git@${sshHost}:$Org/aidd-script.git"
-    }
-}
+# aidd-script は public のため、--org / --protocol / --ssh-name に依らず固定の https URL から取得する。
+$AiddScriptRepoUrl = 'https://github.com/amagrammers/aidd-script.git'
 
 $InstallDir = Join-Path $env:USERPROFILE '.aidd'
 # ~/.aidd/<リポジトリ名> が各リポジトリの clone、ビルド成果物はその直下の publish/ に置く。

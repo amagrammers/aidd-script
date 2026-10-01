@@ -152,7 +152,8 @@ internal static class Program
 
         var harnessChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
         var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
-        var aiddChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-script"), branch, AiddRepoDir, "aidd-script");
+        // aidd-script は public のため、org / protocol / ssh-name に依らず固定の https URL から取得する
+        var aiddChanged = SyncRepo("https://github.com/amagrammers/aidd-script.git", branch, AiddRepoDir, "aidd-script");
         SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-template"), branch, TemplateRepoDir, "aidd-template");
         SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
 
