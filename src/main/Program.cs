@@ -7,9 +7,10 @@ internal static class Program
 {
     private static readonly string InstallDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".aidd");
-    private static readonly string HarnessInstallDir = Path.Combine(InstallDir, "ai-harness-main");
-    private static readonly string CreateDocsInstallDir = Path.Combine(InstallDir, "aidd-create-docs");
-    private static readonly string DocsInstallDir = Path.Combine(InstallDir, "aidd-docs");
+    // ~/.aidd/<repo> は各リポジトリの clone。ビルド成果物は <repo>/publish に置く。
+    private static readonly string HarnessRepoDir = Path.Combine(InstallDir, "ai-harness-main");
+    private static readonly string CreateDocsRepoDir = Path.Combine(InstallDir, "aidd-create-docs");
+    private static readonly string DocsRepoDir = Path.Combine(InstallDir, "aidd-docs");
 
     private static int Main(string[] args)
     {
@@ -110,21 +111,37 @@ internal static class Program
         RequireCommand("git");
         RequireCommand("dotnet");
 
-        StopAiHarnessMain();
-        PublishDotnetTool(
-            BuildRepoUrl(protocol, org, "ai-harness-main"), branch, HarnessInstallDir, "ai-harness-main",
-            csprojRelative: "src/main/ai-harness-main.csproj",
-            pluginDirPrefix: "ai-harness-",
-            baselibFileName: "ai-harness-baselib.dll",
-            selfExtract: true);
-        PublishDotnetTool(
-            BuildRepoUrl(protocol, org, "aidd-create-docs"), branch, CreateDocsInstallDir, "aidd-create-docs",
-            csprojRelative: "src/main/aidd-create-docs.csproj",
-            pluginDirPrefix: "aidd-section-",
-            baselibFileName: "aidd-create-docs-baselib.dll",
-            selfExtract: false);
-        RefreshPlainCheckout(BuildRepoUrl(protocol, org, "aidd-docs"), branch, DocsInstallDir, "aidd-docs");
-        RestartAiHarnessMain();
+        // 旧配置の削除は発行済み exe を消すため、daemon を先に止める（Windows のファイルロック対策）
+        if (IsLegacyLayout(HarnessRepoDir)) StopAiHarnessMain();
+
+        var harnessChanged = SyncRepo(BuildRepoUrl(protocol, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
+        var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
+        SyncRepo(BuildRepoUrl(protocol, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
+
+        // 差分が無くても、発行物が無ければ（前回の失敗など）ビルドする
+        var harnessNeedsPublish = harnessChanged || !File.Exists(ExePath(HarnessRepoDir, "ai-harness-main"));
+        var createDocsNeedsPublish = createDocsChanged || !File.Exists(ExePath(CreateDocsRepoDir, "aidd-create-docs"));
+
+        if (harnessNeedsPublish)
+        {
+            StopAiHarnessMain();
+            PublishDotnetTool(
+                HarnessRepoDir, "ai-harness-main",
+                csprojRelative: "src/main/ai-harness-main.csproj",
+                pluginDirPrefix: "ai-harness-",
+                baselibFileName: "ai-harness-baselib.dll",
+                selfExtract: true);
+        }
+        if (createDocsNeedsPublish)
+        {
+            PublishDotnetTool(
+                CreateDocsRepoDir, "aidd-create-docs",
+                csprojRelative: "src/main/aidd-create-docs.csproj",
+                pluginDirPrefix: "aidd-section-",
+                baselibFileName: "aidd-create-docs-baselib.dll",
+                selfExtract: false);
+        }
+        if (harnessNeedsPublish) RestartAiHarnessMain();
 
         Log("アップデート完了。");
     }
@@ -145,63 +162,61 @@ internal static class Program
         return $"linux-{arch}";
     }
 
+    private static string PublishDir(string repoDir) => Path.Combine(repoDir, "publish");
+
+    private static string ExePath(string repoDir, string exeName)
+        => Path.Combine(PublishDir(repoDir), OperatingSystem.IsWindows() ? exeName + ".exe" : exeName);
+
+    // repoDir（~/.aidd/<repo> の clone）からビルドし、成果物を repoDir/publish へ発行する。
     private static void PublishDotnetTool(
-        string repoUrl, string branch, string installDir, string exeName,
+        string repoDir, string exeName,
         string csprojRelative, string pluginDirPrefix, string baselibFileName, bool selfExtract)
     {
-        Log($"{exeName} を {installDir} へ再発行します（branch: {branch}）…");
+        var installDir = PublishDir(repoDir);
+        Log($"{exeName} を {installDir} へ再発行します…");
+        // 失敗した発行の残骸を「発行済み」と取り違えないよう、先に消す
+        TryDelete(installDir);
         Directory.CreateDirectory(installDir);
 
-        var work = Directory.CreateTempSubdirectory($"{exeName}-src-");
-        try
+        Log("本体を発行します（self-contained 単一ファイル）…");
+        var csproj = Path.Combine(repoDir, csprojRelative.Replace('/', Path.DirectorySeparatorChar));
+        var publishArgs = new List<string>
         {
-            Log($"{exeName} を clone します…");
-            Run("git", "clone", "--quiet", "--depth", "1", "--branch", branch, repoUrl, work.FullName);
-
-            Log("本体を発行します（self-contained 単一ファイル）…");
-            var csproj = Path.Combine(work.FullName, csprojRelative.Replace('/', Path.DirectorySeparatorChar));
-            var publishArgs = new List<string>
-            {
-                "publish", csproj,
-                "-c", "Release",
-                "-r", CurrentRid(),
-                "--self-contained", "true",
-                "-p:PublishSingleFile=true",
-            };
-            if (selfExtract)
-            {
-                publishArgs.Add("-p:IncludeNativeLibrariesForSelfExtract=true");
-            }
-            // -tl:off は dotnet の要約表示（ターミナルロガー）を切る。端末へ直に出すと、日本語環境で
-            // 語順の崩れた要約になるため。
-            publishArgs.AddRange(["-tl:off", "-o", installDir]);
-            Run("dotnet", [.. publishArgs]);
-
-            var libDir = Path.Combine(installDir, "lib");
-            Directory.CreateDirectory(libDir);
-
-            var pluginsRoot = Path.Combine(work.FullName, "src", "plugins");
-            if (Directory.Exists(pluginsRoot))
-            {
-                foreach (var dir in Directory.GetDirectories(pluginsRoot, pluginDirPrefix + "*"))
-                {
-                    var csprojFile = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
-                    if (csprojFile is null) continue;
-                    Log($"  同梱プラグインをビルドします: {Path.GetFileName(dir)}");
-                    Run("dotnet", "build", csprojFile, "-c", "Release", "-tl:off", "-o", libDir);
-                }
-            }
-
-            // baselib は host / 本体が共有ロードするため lib/ には置かない
-            var baselibPath = Path.Combine(libDir, baselibFileName);
-            if (File.Exists(baselibPath)) File.Delete(baselibPath);
+            "publish", csproj,
+            "-c", "Release",
+            "-r", CurrentRid(),
+            "--self-contained", "true",
+            "-p:PublishSingleFile=true",
+        };
+        if (selfExtract)
+        {
+            publishArgs.Add("-p:IncludeNativeLibrariesForSelfExtract=true");
         }
-        finally
+        // -tl:off は dotnet の要約表示（ターミナルロガー）を切る。端末へ直に出すと、日本語環境で
+        // 語順の崩れた要約になるため。
+        publishArgs.AddRange(["-tl:off", "-o", installDir]);
+        Run("dotnet", [.. publishArgs]);
+
+        var libDir = Path.Combine(installDir, "lib");
+        Directory.CreateDirectory(libDir);
+
+        var pluginsRoot = Path.Combine(repoDir, "src", "plugins");
+        if (Directory.Exists(pluginsRoot))
         {
-            TryDelete(work.FullName);
+            foreach (var dir in Directory.GetDirectories(pluginsRoot, pluginDirPrefix + "*"))
+            {
+                var csprojFile = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
+                if (csprojFile is null) continue;
+                Log($"  同梱プラグインをビルドします: {Path.GetFileName(dir)}");
+                Run("dotnet", "build", csprojFile, "-c", "Release", "-tl:off", "-o", libDir);
+            }
         }
 
-        var exePath = Path.Combine(installDir, OperatingSystem.IsWindows() ? exeName + ".exe" : exeName);
+        // baselib は host / 本体が共有ロードするため lib/ には置かない
+        var baselibPath = Path.Combine(libDir, baselibFileName);
+        if (File.Exists(baselibPath)) File.Delete(baselibPath);
+
+        var exePath = ExePath(repoDir, exeName);
         if (!File.Exists(exePath))
         {
             throw new AiddException($"{exeName} の発行に失敗しました（{exePath} が見つかりません）。");
@@ -237,11 +252,14 @@ internal static class Program
 
     private static string? ResolveHarnessExe()
     {
-        var exePath = Path.Combine(HarnessInstallDir, OperatingSystem.IsWindows() ? "ai-harness-main.exe" : "ai-harness-main");
-        return File.Exists(exePath) ? exePath : null;
+        var exeName = OperatingSystem.IsWindows() ? "ai-harness-main.exe" : "ai-harness-main";
+        // 旧配置（clone なしで ~/.aidd/ai-harness-main 直下に発行していた）も停止対象に含める
+        string[] candidates = [Path.Combine(PublishDir(HarnessRepoDir), exeName), Path.Combine(HarnessRepoDir, exeName)];
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     // ---- --update-project（~/.aidd/aidd-docs/core でカレントディレクトリの .docs/ を置換。取得はしない） ----
+    // 正本は aidd-docs の core/。clone の作業ツリーをそのまま読む。
 
     private static void RunUpdateProject(IReadOnlyList<string> args)
     {
@@ -250,7 +268,7 @@ internal static class Program
             throw new AiddException($"--update-project は引数を取りません: {args[0]}");
         }
 
-        var docsCoreDir = Path.Combine(DocsInstallDir, "core");
+        var docsCoreDir = Path.Combine(DocsRepoDir, "core");
         if (!Directory.Exists(docsCoreDir))
         {
             throw new AiddException($"{docsCoreDir} がありません。先に aidd --update-aidd を実行してください。");
@@ -282,31 +300,61 @@ internal static class Program
         }
     }
 
-    // git clone のみで dotnet ビルドを伴わない取得。
-    // 毎回 clone し直して丸ごと置き換える（差分 pull はしない）。
-    private static void RefreshPlainCheckout(string repoUrl, string branch, string installDir, string label)
+    // ---- リポジトリの取得（~/.aidd/<repo> に clone を置き、差分があるときだけ揃える） ----
+
+    // .git を持たない配置（clone を置かず成果物だけを置いていた旧配置）
+    private static bool IsLegacyLayout(string repoDir)
+        => Directory.Exists(repoDir) && !Directory.Exists(Path.Combine(repoDir, ".git"));
+
+    // 戻り値は「clone した、または差分を取り込んだ」か。差分が無ければ false（何も変更しない）。
+    private static bool SyncRepo(string repoUrl, string branch, string repoDir, string label)
     {
-        Log($"{label} を {installDir} へ取得します（branch: {branch}）…");
-        var work = Directory.CreateTempSubdirectory($"{label}-src-");
-        try
+        if (IsLegacyLayout(repoDir))
         {
-            Run("git", "clone", "--quiet", "--depth", "1", "--branch", branch, repoUrl, work.FullName);
-
-            var gitDir = Path.Combine(work.FullName, ".git");
-            if (Directory.Exists(gitDir)) Directory.Delete(gitDir, recursive: true);
-
-            if (Directory.Exists(installDir)) Directory.Delete(installDir, recursive: true);
-            Directory.Move(work.FullName, installDir);
+            Log($"{label}: 旧配置（clone なし）を削除して clone し直します。");
+            Directory.Delete(repoDir, recursive: true);
         }
-        catch
+
+        if (!Directory.Exists(repoDir))
         {
-            TryDelete(work.FullName);
-            throw;
+            Log($"{label} を {repoDir} へ clone します（branch: {branch}）…");
+            Run("git", "clone", "--quiet", "--depth", "1", "--branch", branch, repoUrl, repoDir);
+            return true;
         }
-        Log($"{label} を取得しました: {installDir}");
+
+        // org / protocol の変更に追随するため、毎回 remote を指定どおりに揃える
+        Run("git", "-C", repoDir, "remote", "set-url", "origin", repoUrl);
+        Run("git", "-C", repoDir, "fetch", "--quiet", "--depth", "1", "origin", branch);
+        var head = RunCapture("git", "-C", repoDir, "rev-parse", "HEAD");
+        var remote = RunCapture("git", "-C", repoDir, "rev-parse", "FETCH_HEAD");
+        if (head == remote)
+        {
+            Log($"{label}: 差分なし（{head[..7]}）。");
+            return false;
+        }
+
+        Run("git", "-C", repoDir, "reset", "--quiet", "--hard", "FETCH_HEAD");
+        Log($"{label}: {head[..7]} → {remote[..7]} へ更新しました。");
+        return true;
     }
 
     // ---- process helpers ----
+
+    private static string RunCapture(string fileName, params string[] arguments)
+    {
+        var psi = new ProcessStartInfo(fileName) { UseShellExecute = false, RedirectStandardOutput = true };
+        foreach (var arg in arguments) psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi)
+            ?? throw new AiddException($"コマンドを起動できません: {fileName}");
+        var output = process.StandardOutput.ReadToEnd().Trim();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new AiddException($"コマンドが失敗しました: {fileName} {string.Join(' ', arguments)}");
+        }
+        return output;
+    }
 
     private static void Run(string fileName, params string[] arguments)
     {

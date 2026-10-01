@@ -45,12 +45,14 @@ switch ($Protocol) {
 }
 
 $InstallDir = Join-Path $env:USERPROFILE '.aidd'
+# ~/.aidd/<リポジトリ名> が各リポジトリの clone、ビルド成果物はその直下の publish/ に置く。
 # 各ツールが同じ lib/ を共有すると、互いに無関係なプラグイン DLL が同じフォルダに混在して
-# しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。.aidd 配下にそれぞれ別
-# ディレクトリを切り、発行先・PATH 登録とも独立させる。
-$AiddInstallDir = Join-Path $InstallDir 'aidd'
-$HarnessInstallDir = Join-Path $InstallDir 'ai-harness-main'
-$CreateDocsInstallDir = Join-Path $InstallDir 'aidd-create-docs'
+# しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。ツールごとに別の
+# publish/ を持たせ、発行先・PATH 登録とも独立させる。
+$AiddRepoDir = Join-Path $InstallDir 'aidd-script'
+$AiddInstallDir = Join-Path $AiddRepoDir 'publish'
+$HarnessInstallDir = Join-Path $InstallDir 'ai-harness-main\publish'
+$CreateDocsInstallDir = Join-Path $InstallDir 'aidd-create-docs\publish'
 $ProjectRoot = (Get-Location).Path
 $Rid = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
 
@@ -106,7 +108,7 @@ function Install-DotNetSdk {
 }
 
 # aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
-# 読み飛ばす。最新へ差し替えたい場合は $AiddInstallDir を消してから再実行する。
+# 読み飛ばす。最新へ差し替えたい場合は $AiddRepoDir を消してから再実行する。
 function Build-Aidd {
     $exePath = Join-Path $AiddInstallDir 'aidd.exe'
     if (Test-Path $exePath) {
@@ -114,27 +116,21 @@ function Build-Aidd {
         return
     }
 
-    Write-Step "aidd を $AiddInstallDir へ発行します…"
-    New-Item -ItemType Directory -Force -Path $AiddInstallDir | Out-Null
-
-    $work = Join-Path ([System.IO.Path]::GetTempPath()) ("aidd-script-src-" + [guid]::NewGuid())
-    Write-Step "aidd-script を clone します（branch: $Branch）…"
-    & git clone --quiet --depth 1 --branch $Branch $AiddScriptRepoUrl $work
-    if ($LASTEXITCODE -ne 0) { throw 'aidd-script のクローンに失敗しました。' }
-
-    try {
-        Write-Step 'aidd を発行します（self-contained 単一ファイル）…'
-        # -tl:off は dotnet の要約表示（ターミナルロガー）を切る。端末へ直に出すと、日本語環境で
-        # 「3.1 秒後に 成功しました をビルド」のように語順の崩れた要約になるため。
-        & dotnet publish (Join-Path $work 'src\main\aidd.csproj') `
-            -c Release -r $Rid --self-contained true `
-            -p:PublishSingleFile=true `
-            -tl:off -o $AiddInstallDir
-        if ($LASTEXITCODE -ne 0) { throw 'dotnet publish に失敗しました。' }
+    if (-not (Test-Path (Join-Path $AiddRepoDir '.git'))) {
+        Write-Step "aidd-script を $AiddRepoDir へ clone します（branch: $Branch）…"
+        Remove-Item -Recurse -Force $AiddRepoDir -ErrorAction SilentlyContinue
+        & git clone --quiet --depth 1 --branch $Branch $AiddScriptRepoUrl $AiddRepoDir
+        if ($LASTEXITCODE -ne 0) { throw 'aidd-script のクローンに失敗しました。' }
     }
-    finally {
-        Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-    }
+
+    Write-Step "aidd を $AiddInstallDir へ発行します（self-contained 単一ファイル）…"
+    # -tl:off は dotnet の要約表示（ターミナルロガー）を切る。端末へ直に出すと、日本語環境で
+    # 「3.1 秒後に 成功しました をビルド」のように語順の崩れた要約になるため。
+    & dotnet publish (Join-Path $AiddRepoDir 'src\main\aidd.csproj') `
+        -c Release -r $Rid --self-contained true `
+        -p:PublishSingleFile=true `
+        -tl:off -o $AiddInstallDir
+    if ($LASTEXITCODE -ne 0) { throw 'dotnet publish に失敗しました。' }
 
     if (-not (Test-Path $exePath)) {
         throw "aidd の発行に失敗しました（$exePath が見つかりません）。"

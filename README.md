@@ -13,8 +13,8 @@
 ## setup.sh / setup.ps1 が行うこと
 
 1. git / .NET SDK 10 の確認・導入
-2. `aidd-script` 自身を clone し、`aidd` CLI を `~/.aidd/aidd` へ発行
-3. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-docs）を発行・取得
+2. `aidd-script` 自身を `~/.aidd/aidd-script` へ clone し、そこから `aidd` CLI を `~/.aidd/aidd-script/publish` へ発行
+3. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-docs）を clone・発行
 4. git リポジトリの初期化・pre-commit フック（`.githooks/`）の配線
 5. `ai-harness-main --init --enable ai-harness-aidd` でこのプロジェクトへ hook を配線し、`--doctor` / `--validate` で動作確認
 
@@ -55,13 +55,28 @@ aidd --update-project
 
 2 つは対象が異なる。`--update-aidd` は `~/.aidd`（マシン側）、`--update-project` はカレントディレクトリ（プロジェクト側）。
 
-- **`aidd --update-aidd`** — `~/.aidd` 配下の ai-harness-main・aidd-create-docs・aidd-docs を、
-  指定した org/branch から取得し直して最新へ差し替える（ai-harness-main・aidd-create-docs は clone
-  してから self-contained 単一ファイルとして再発行、aidd-docs は clone のみ）。
-  既存があっても常に差し替える（差分 pull はしない）
+- **`aidd --update-aidd`** — `~/.aidd/<repo>` に ai-harness-main・aidd-create-docs・aidd-docs の clone を
+  置き、指定した org/branch と比べて**差分があるときだけ**更新する（`git fetch` → HEAD と比較 →
+  差分があれば `reset --hard` で揃える。ローカル変更は破棄される）。差分が無ければ何もしない。
+  ai-harness-main・aidd-create-docs は更新があったとき、または発行物が無いときに clone 内からビルドし、
+  self-contained 単一ファイルとして `<repo>/publish/` へ再発行する。aidd-docs はビルドしない。
+  clone を持たない旧配置があれば削除して clone し直す
 - **`aidd --update-project`** — 引数なし。取得はせず、`~/.aidd/aidd-docs/core` でカレントディレクトリの
   `.docs/` を丸ごと置換する（`.docs/` にしか無いファイルは消える）。`~/.aidd` に無ければ
   `aidd --update-aidd` を先に実行するよう促して中断する。途中で失敗しても既存の `.docs/` は残る
+
+### `~/.aidd` の構成
+
+```
+~/.aidd/
+  aidd-script/        clone（setup が配置。自己更新はしない）
+    publish/          aidd 実行体（PATH）
+  ai-harness-main/    clone
+    publish/          ai-harness-main 実行体と lib/（PATH）
+  aidd-create-docs/   clone
+    publish/          aidd-create-docs 実行体と lib/（PATH）
+  aidd-docs/          clone（`--update-project` が core/ を読む）
+```
 
 ## 関係
 

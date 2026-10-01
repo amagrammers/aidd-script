@@ -27,12 +27,14 @@ PROTOCOL="https"   # https | ssh
 ORG="amagrammers"
 BRANCH="main"
 INSTALL_DIR="${HOME}/.aidd"
+# ~/.aidd/<リポジトリ名> が各リポジトリの clone、ビルド成果物はその直下の publish/ に置く。
 # 各ツールが同じ lib/ を共有すると、互いに無関係なプラグイン DLL が同じフォルダに混在して
-# しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。.aidd 配下にそれぞれ別
-# ディレクトリを切り、発行先・PATH 登録とも独立させる。
-AIDD_INSTALL_DIR="${INSTALL_DIR}/aidd"
-HARNESS_INSTALL_DIR="${INSTALL_DIR}/ai-harness-main"
-CREATE_DOCS_INSTALL_DIR="${INSTALL_DIR}/aidd-create-docs"
+# しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。ツールごとに別の
+# publish/ を持たせ、発行先・PATH 登録とも独立させる。
+AIDD_REPO_DIR="${INSTALL_DIR}/aidd-script"
+AIDD_INSTALL_DIR="${AIDD_REPO_DIR}/publish"
+HARNESS_INSTALL_DIR="${INSTALL_DIR}/ai-harness-main/publish"
+CREATE_DOCS_INSTALL_DIR="${INSTALL_DIR}/aidd-create-docs/publish"
 PROJECT_ROOT="$(pwd)"
 PROFILE_FILE="${HOME}/.bashrc"
 
@@ -124,8 +126,7 @@ install_dotnet_sdk() {
 }
 
 # aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
-# 読み飛ばす。最新へ差し替えたい場合はこの関数を直接呼び直すか、$AIDD_INSTALL_DIR を消してから
-# 再実行する。
+# 読み飛ばす。最新へ差し替えたい場合は $AIDD_REPO_DIR を消してから再実行する。
 build_aidd() {
   local exe_path="${AIDD_INSTALL_DIR}/aidd"
   if [ -x "$exe_path" ]; then
@@ -133,21 +134,16 @@ build_aidd() {
     return
   fi
 
-  log "aidd を ${AIDD_INSTALL_DIR} へ発行します…"
-  mkdir -p "$AIDD_INSTALL_DIR"
+  if [ ! -d "${AIDD_REPO_DIR}/.git" ]; then
+    log "aidd-script を ${AIDD_REPO_DIR} へ clone します（branch: ${BRANCH}）…"
+    rm -rf "$AIDD_REPO_DIR"
+    git clone --quiet --depth 1 --branch "$BRANCH" "$AIDD_SCRIPT_REPO_URL" "$AIDD_REPO_DIR"
+  fi
 
-  local work
-  work="$(mktemp -d)"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$work'" RETURN
-
-  log "aidd-script を clone します（branch: ${BRANCH}）…"
-  git clone --quiet --depth 1 --branch "$BRANCH" "$AIDD_SCRIPT_REPO_URL" "$work"
-
-  log "aidd を発行します（self-contained 単一ファイル）…"
+  log "aidd を ${AIDD_INSTALL_DIR} へ発行します（self-contained 単一ファイル）…"
   # -tl:off は dotnet の要約表示（ターミナルロガー）を切る。端末へ直に出すと、日本語環境で
   # 「3.1 秒後に 成功しました をビルド」のように語順の崩れた要約になるため。
-  dotnet publish "${work}/src/main/aidd.csproj" \
+  dotnet publish "${AIDD_REPO_DIR}/src/main/aidd.csproj" \
     -c Release -r "$RID" --self-contained true \
     -p:PublishSingleFile=true \
     -tl:off -o "$AIDD_INSTALL_DIR"
