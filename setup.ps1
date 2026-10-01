@@ -17,14 +17,27 @@ ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update-aidd の仕�
 差し替わる）。
 #>
 
-param(
-    [ValidateSet('https', 'ssh')]
-    [string]$Protocol = 'https',
-    [string]$Org = 'amagrammers',
-    [string]$Branch = 'main'
-)
-
 $ErrorActionPreference = 'Stop'
+
+# setup.sh と引数の書式を揃えるため、param() ではなく $args を自前で解釈する
+# （param() だと -Org 形式になり、--org が位置引数として別の引数へ束縛されてしまう）。
+$Protocol = 'https'   # https | ssh
+$Org = 'amagrammers'
+$Branch = 'main'
+
+for ($i = 0; $i -lt $args.Count; $i += 2) {
+    if ($i + 1 -ge $args.Count) { throw "[setup] $($args[$i]) には値が必要です。" }
+    switch ($args[$i]) {
+        '--protocol' { $Protocol = $args[$i + 1] }
+        '--org'      { $Org = $args[$i + 1] }
+        '--branch'   { $Branch = $args[$i + 1] }
+        default      { throw "[setup] 不明な引数です: $($args[$i])" }
+    }
+}
+
+if ($Protocol -notin @('https', 'ssh')) {
+    throw "[setup] --protocol は https か ssh のいずれかです: $Protocol"
+}
 
 switch ($Protocol) {
     'https' { $AiddScriptRepoUrl = "https://github.com/$Org/aidd-script.git" }
