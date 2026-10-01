@@ -24,6 +24,7 @@ export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 # 5 リポジトリはすべて同一 org 配下。URL は「PROTOCOL + ORG/<リポジトリ>.git」で組む。
 PROTOCOL="https"   # https | ssh
+SSH_NAME=""        # ssh のときの <ssh-name>@github.com の部分。未指定なら git
 ORG="amagrammers"
 BRANCH="main"
 INSTALL_DIR="${HOME}/.aidd"
@@ -41,15 +42,21 @@ PROFILE_FILE="${HOME}/.bashrc"
 while [ $# -gt 0 ]; do
   case "$1" in
     --protocol) PROTOCOL="$2"; shift 2 ;;
+    --ssh-name) SSH_NAME="$2"; shift 2 ;;
     --org) ORG="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
     *) echo "[setup] 不明な引数です: $1" >&2; exit 1 ;;
   esac
 done
 
+if [ -n "$SSH_NAME" ] && [ "$PROTOCOL" != "ssh" ]; then
+  echo "[setup] --ssh-name は --protocol ssh のときだけ指定できます。" >&2
+  exit 1
+fi
+
 case "$PROTOCOL" in
   https) AIDD_SCRIPT_REPO_URL="https://github.com/${ORG}/aidd-script.git" ;;
-  ssh)   AIDD_SCRIPT_REPO_URL="git@github.com:${ORG}/aidd-script.git" ;;
+  ssh)   AIDD_SCRIPT_REPO_URL="${SSH_NAME:-git}@github.com:${ORG}/aidd-script.git" ;;
   *) echo "[setup] --protocol は https か ssh のいずれかです: $PROTOCOL" >&2; exit 1 ;;
 esac
 
@@ -172,7 +179,9 @@ add_dir_to_path() {
 update_tool_suite() {
   add_dir_to_path "$AIDD_INSTALL_DIR"
   log ".aidd のツール一式を aidd --update-aidd で発行します…"
-  "${AIDD_INSTALL_DIR}/aidd" --update-aidd --protocol "$PROTOCOL" --org "$ORG" --branch "$BRANCH"
+  local ssh_args=()
+  [ -n "$SSH_NAME" ] && ssh_args=(--ssh-name "$SSH_NAME")
+  "${AIDD_INSTALL_DIR}/aidd" --update-aidd --protocol "$PROTOCOL" ${ssh_args[@]+"${ssh_args[@]}"} --org "$ORG" --branch "$BRANCH"
   add_dir_to_path "$HARNESS_INSTALL_DIR"
   add_dir_to_path "$CREATE_DOCS_INSTALL_DIR"
 }

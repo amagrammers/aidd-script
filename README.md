@@ -41,6 +41,7 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 | オプション | 既定値 | 内容 |
 | -- | -- | -- |
 | `--protocol` | `https` | リポジトリ取得プロトコル（`https` / `ssh`） |
+| `--ssh-name` | `git` | ssh の URL `<ssh-name>@github.com:<org>/<repo>.git` のユーザー名部分。`--protocol ssh` のときだけ指定できる（https で指定するとエラー） |
 | `--org` | `amagrammers` | 取得元の GitHub org |
 | `--branch` | `main` | 取得元ブランチ |
 
@@ -49,7 +50,7 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 ## aidd CLI（`src/main/`）
 
 ```
-aidd --update-aidd [--protocol https|ssh] [--org <org>] [--branch <branch>]
+aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>]
 aidd --update-project
 ```
 

@@ -16,7 +16,7 @@ internal static class Program
     {
         if (args.Length == 0)
         {
-            return Fail("使い方: aidd --update-aidd [--protocol https|ssh] [--org <org>] [--branch <branch>] | " +
+            return Fail("使い方: aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>] | " +
                          "aidd --update-project");
         }
 
@@ -91,19 +91,29 @@ internal static class Program
     private static string GetOption(IReadOnlyDictionary<string, string> options, string name, string defaultValue)
         => options.TryGetValue(name, out var value) ? value : defaultValue;
 
-    private static string BuildRepoUrl(string protocol, string org, string repoName) => protocol switch
+    // sshName は ssh のときだけ意味を持つ（git@github.com の「git」の部分）。https で指定されたら
+    // 黙って無視せずエラーにする。
+    private static string BuildRepoUrl(string protocol, string? sshName, string org, string repoName)
     {
-        "https" => $"https://github.com/{org}/{repoName}.git",
-        "ssh" => $"git@github.com:{org}/{repoName}.git",
-        _ => throw new AiddException($"--protocol は https か ssh のいずれかです: {protocol}"),
-    };
+        if (protocol != "ssh" && sshName is not null)
+        {
+            throw new AiddException("--ssh-name は --protocol ssh のときだけ指定できます。");
+        }
+        return protocol switch
+        {
+            "https" => $"https://github.com/{org}/{repoName}.git",
+            "ssh" => $"{sshName ?? "git"}@github.com:{org}/{repoName}.git",
+            _ => throw new AiddException($"--protocol は https か ssh のいずれかです: {protocol}"),
+        };
+    }
 
     // ---- --update-aidd（~/.aidd のツール一式: ai-harness-main / aidd-create-docs / aidd-docs） ----
 
     private static void RunUpdateAidd(IReadOnlyDictionary<string, string> options)
     {
-        ValidateOptions(options, "protocol", "org", "branch");
+        ValidateOptions(options, "protocol", "ssh-name", "org", "branch");
         var protocol = GetOption(options, "protocol", "https");
+        var sshName = options.GetValueOrDefault("ssh-name");
         var org = GetOption(options, "org", "amagrammers");
         var branch = GetOption(options, "branch", "main");
 
@@ -114,9 +124,9 @@ internal static class Program
         // 旧配置の削除は発行済み exe を消すため、daemon を先に止める（Windows のファイルロック対策）
         if (IsLegacyLayout(HarnessRepoDir)) StopAiHarnessMain();
 
-        var harnessChanged = SyncRepo(BuildRepoUrl(protocol, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
-        var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
-        SyncRepo(BuildRepoUrl(protocol, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
+        var harnessChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
+        var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
+        SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
 
         // 差分が無くても、発行物が無ければ（前回の失敗など）ビルドする
         var harnessNeedsPublish = harnessChanged || !File.Exists(ExePath(HarnessRepoDir, "ai-harness-main"));

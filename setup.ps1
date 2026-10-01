@@ -22,6 +22,7 @@ $ErrorActionPreference = 'Stop'
 # setup.sh と引数の書式を揃えるため、param() ではなく $args を自前で解釈する
 # （param() だと -Org 形式になり、--org が位置引数として別の引数へ束縛されてしまう）。
 $Protocol = 'https'   # https | ssh
+$SshName = $null      # ssh のときの <ssh-name>@github.com の部分。未指定なら git
 $Org = 'amagrammers'
 $Branch = 'main'
 
@@ -29,6 +30,7 @@ for ($i = 0; $i -lt $args.Count; $i += 2) {
     if ($i + 1 -ge $args.Count) { throw "[setup] $($args[$i]) には値が必要です。" }
     switch ($args[$i]) {
         '--protocol' { $Protocol = $args[$i + 1] }
+        '--ssh-name' { $SshName = $args[$i + 1] }
         '--org'      { $Org = $args[$i + 1] }
         '--branch'   { $Branch = $args[$i + 1] }
         default      { throw "[setup] 不明な引数です: $($args[$i])" }
@@ -39,9 +41,13 @@ if ($Protocol -notin @('https', 'ssh')) {
     throw "[setup] --protocol は https か ssh のいずれかです: $Protocol"
 }
 
+if ($SshName -and $Protocol -ne 'ssh') {
+    throw '[setup] --ssh-name は --protocol ssh のときだけ指定できます。'
+}
+
 switch ($Protocol) {
     'https' { $AiddScriptRepoUrl = "https://github.com/$Org/aidd-script.git" }
-    'ssh'   { $AiddScriptRepoUrl = "git@github.com:$Org/aidd-script.git" }
+    'ssh'   { $AiddScriptRepoUrl = "$(if ($SshName) { $SshName } else { 'git' })@github.com`:$Org/aidd-script.git" }
 }
 
 $InstallDir = Join-Path $env:USERPROFILE '.aidd'
@@ -157,7 +163,8 @@ function Update-ToolSuite {
     Add-InstallDirToUserPath $AiddInstallDir
     Write-Step '.aidd のツール一式を aidd --update-aidd で発行します…'
     $aiddExe = Join-Path $AiddInstallDir 'aidd.exe'
-    & $aiddExe --update-aidd --protocol $Protocol --org $Org --branch $Branch
+    $sshArgs = if ($SshName) { @('--ssh-name', $SshName) } else { @() }
+    & $aiddExe --update-aidd --protocol $Protocol @sshArgs --org $Org --branch $Branch
     if ($LASTEXITCODE -ne 0) { throw 'aidd --update-aidd に失敗しました。' }
     Add-InstallDirToUserPath $HarnessInstallDir
     Add-InstallDirToUserPath $CreateDocsInstallDir
