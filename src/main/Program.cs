@@ -11,6 +11,7 @@ internal static class Program
     // ~/.aidd/<repo> は各リポジトリの clone。ビルド成果物は <repo>/publish に置く。
     private static readonly string HarnessRepoDir = Path.Combine(InstallDir, "ai-harness-main");
     private static readonly string CreateDocsRepoDir = Path.Combine(InstallDir, "aidd-create-docs");
+    private static readonly string TemplateRepoDir = Path.Combine(InstallDir, "aidd-template");
     private static readonly string DocsRepoDir = Path.Combine(InstallDir, "aidd-docs");
 
     private static int Main(string[] args)
@@ -19,7 +20,7 @@ internal static class Program
         {
             return Fail("使い方: aidd --version | " +
                          "aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>] | " +
-                         "aidd --update-project");
+                         "aidd --init | aidd --update-project");
         }
 
         try
@@ -33,6 +34,9 @@ internal static class Program
                     return 0;
                 case "--update-aidd":
                     RunUpdateAidd(ParseOptions(args.Skip(1).ToArray()));
+                    return 0;
+                case "--init":
+                    RunInit(args.Skip(1).ToArray());
                     return 0;
                 case "--update-project":
                     RunUpdateProject(args.Skip(1).ToArray());
@@ -147,6 +151,7 @@ internal static class Program
 
         var harnessChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
         var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
+        SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-template"), branch, TemplateRepoDir, "aidd-template");
         SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
 
         // 差分が無くても、発行物が無ければ（前回の失敗など）ビルドする
@@ -287,6 +292,64 @@ internal static class Program
         // 旧配置（clone なしで ~/.aidd/ai-harness-main 直下に発行していた）も停止対象に含める
         string[] candidates = [Path.Combine(PublishDir(HarnessRepoDir), exeName), Path.Combine(HarnessRepoDir, exeName)];
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    // ---- --init（~/.aidd の aidd-template と aidd-docs/core をカレントディレクトリへコピー。取得はしない） ----
+
+    private static void RunInit(IReadOnlyList<string> args)
+    {
+        if (args.Count > 0)
+        {
+            throw new AiddException($"--init は引数を取りません: {args[0]}");
+        }
+
+        if (!Directory.Exists(TemplateRepoDir))
+        {
+            throw new AiddException($"{TemplateRepoDir} がありません。先に aidd --update-aidd を実行してください。");
+        }
+        var docsCoreDir = Path.Combine(DocsRepoDir, "core");
+        if (!Directory.Exists(docsCoreDir))
+        {
+            throw new AiddException($"{docsCoreDir} がありません。先に aidd --update-aidd を実行してください。");
+        }
+
+        var dest = Directory.GetCurrentDirectory();
+
+        // .docs/ は aidd-docs が正本なので、aidd-template 側に .docs/ があってもそちらは使わない
+        var templateFiles = Directory.EnumerateFiles(TemplateRepoDir, "*", SearchOption.AllDirectories)
+            .Where(f => !IsUnderTopLevelDir(TemplateRepoDir, f, ".git"))
+            .Where(f => !IsUnderTopLevelDir(TemplateRepoDir, f, ".docs"))
+            .Select(f => (Source: f, Target: Path.Combine(dest, Path.GetRelativePath(TemplateRepoDir, f))))
+            .ToList();
+
+        var docsFiles = Directory.EnumerateFiles(docsCoreDir, "*", SearchOption.AllDirectories)
+            .Select(f => (Source: f, Target: Path.Combine(dest, ".docs", Path.GetRelativePath(docsCoreDir, f))))
+            .ToList();
+
+        var all = templateFiles.Concat(docsFiles).ToList();
+
+        // 一部だけ書いて失敗する状態を避けるため、書き込み前に全件の衝突を検査する
+        var conflicts = all.Select(x => x.Target).Where(File.Exists).ToList();
+        if (conflicts.Count > 0)
+        {
+            var list = string.Join("\n", conflicts.Select(c => "            " + c));
+            throw new AiddException($"以下のファイルが既に存在するため中断しました。何も変更していません:\n{list}");
+        }
+
+        foreach (var (src, target) in all)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(src, target);
+        }
+
+        Log($"aidd-template から {templateFiles.Count} ファイル、aidd-docs/core から {docsFiles.Count} " +
+            $"ファイルを {dest} へコピーしました。");
+    }
+
+    private static bool IsUnderTopLevelDir(string root, string filePath, string topLevelName)
+    {
+        var rel = Path.GetRelativePath(root, filePath);
+        return rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0] == topLevelName;
     }
 
     // ---- --update-project（~/.aidd/aidd-docs/core でカレントディレクトリの .docs/ を置換。取得はしない） ----
