@@ -1,16 +1,13 @@
 ﻿#Requires -Version 5.1
 <#
-aidd-template ベースのプロジェクトをセットアップするスクリプト。
+aidd のツールをインストール・セットアップするスクリプト（PATH の追加を含む）。
 git / .NET SDK 10 を確認し、無ければ導入したうえで、aidd-script 本体（aidd CLI）を
-$env:USERPROFILE\.aidd\aidd へ発行する。以降のツール一式（ai-harness-main / aidd-create-docs /
-aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
-あわせて ai-harness-main はこのプロジェクトへ配線する
-（.claude/settings.json の hook 追記 ＋ ai-harness-aidd の有効化）。
-あわせて git の pre-commit フック（.githooks/）を配線する。
+$env:USERPROFILE\.aidd\aidd-script\publish へ発行する。以降のツール一式（ai-harness-main /
+aidd-create-docs / aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
+プロジェクトには触れない（プロジェクトの配線・初期化は行わない）。
 
-Invoke-WebRequest 等でダウンロードしてから実行する delivery を想定し、対象プロジェクトの
-ルートディレクトリで実行する（スクリプト自身の設置場所は問わない。$ProjectRoot は
-実行時のカレントディレクトリ）。
+Invoke-WebRequest 等でダウンロードしてから実行する delivery を想定する（実行時の
+カレントディレクトリやスクリプト自身の設置場所は問わない）。
 
 再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update-aidd が管理する
 ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update-aidd の仕様どおり毎回最新へ
@@ -63,7 +60,6 @@ $AiddRepoDir = Join-Path $InstallDir 'aidd-script'
 $AiddInstallDir = Join-Path $AiddRepoDir 'publish'
 $HarnessInstallDir = Join-Path $InstallDir 'ai-harness-main\publish'
 $CreateDocsInstallDir = Join-Path $InstallDir 'aidd-create-docs\publish'
-$ProjectRoot = (Get-Location).Path
 $Rid = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
 
 function Write-Step($message) {
@@ -192,55 +188,19 @@ function Update-ToolSuite {
     Add-InstallDirToUserPath $CreateDocsInstallDir
 }
 
-function Initialize-GitRepo {
-    & git -C $ProjectRoot rev-parse --git-dir *> $null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Step 'git リポジトリ: OK'
-        return
-    }
-
-    Write-Step 'このプロジェクトはまだ git リポジトリではありません。初期化して初回コミットを作成します…'
-    & git -C $ProjectRoot init -q
-    if ($LASTEXITCODE -ne 0) { throw 'git init に失敗しました。' }
-
-    & git -C $ProjectRoot add -A
-    & git -C $ProjectRoot commit -q -m 'chore: aidd-template から初期化'
-    if ($LASTEXITCODE -ne 0) { throw '初回コミットの作成に失敗しました。' }
-}
-
-function Set-GitHooksPath {
-    $current = & git -C $ProjectRoot config --local --get core.hooksPath 2>$null
-    if ($current -eq '.githooks') {
-        Write-Step 'git hooks: OK（core.hooksPath は設定済み）'
-        return
-    }
-
-    Write-Step 'git hooks を配線します（core.hooksPath=.githooks）…'
-    & git -C $ProjectRoot config --local core.hooksPath .githooks
-    if ($LASTEXITCODE -ne 0) { throw 'core.hooksPath の設定に失敗しました。' }
-}
-
 # --- main ---
 Install-Git
 Install-DotNetSdk
 Build-Aidd
 Update-ToolSuite
-Initialize-GitRepo
-Set-GitHooksPath
 
 $exe = Join-Path $HarnessInstallDir 'ai-harness-main.exe'
 $createDocsExe = Join-Path $CreateDocsInstallDir 'aidd-create-docs.exe'
 
-Write-Step 'プロジェクトを配線します（settings.json の hook ＋ ai-harness-aidd の有効化）…'
-& $exe --init $ProjectRoot --enable ai-harness-aidd
-if ($LASTEXITCODE -ne 0) { throw '--init に失敗しました。' }
-
 Write-Step '動作確認…'
+& (Join-Path $AiddInstallDir 'aidd.exe') --version
+if ($LASTEXITCODE -ne 0) { throw 'aidd --version に失敗しました。' }
 & $exe --doctor
-& $exe --validate $ProjectRoot
-if ($LASTEXITCODE -ne 0) {
-    throw '--validate が失敗しました。上記のログを確認してください。'
-}
 & $createDocsExe --version
 if ($LASTEXITCODE -ne 0) { throw 'aidd-create-docs --version に失敗しました。' }
 

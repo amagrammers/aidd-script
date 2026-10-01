@@ -1,13 +1,13 @@
 # aidd-script
 
-`aidd-template` ベースのプロジェクトを立ち上げる・保守するためのセットアップスクリプトと、
-`aidd` CLI 本体（.NET）を持つリポジトリ。
+aidd のツール（ai-harness-main / aidd-create-docs / aidd-docs）をインストール・更新するための
+セットアップスクリプトと、`aidd` CLI 本体（.NET）を持つリポジトリ。
 
 ## 構成
 
 | パス | 役割 |
 | -- | -- |
-| `setup.sh` / `setup.ps1` | 初回ブートストラップ用スクリプト。curl/`Invoke-WebRequest` でダウンロードしてから実行する delivery を想定し、対象プロジェクトのルートディレクトリで実行する |
+| `setup.sh` / `setup.ps1` | 初回ブートストラップ用スクリプト。curl/`Invoke-WebRequest` でダウンロードしてから実行する delivery を想定する |
 | `src/main/` | `aidd` CLI 本体（`aidd.csproj`）のソース |
 
 ## setup.sh / setup.ps1 が行うこと
@@ -15,8 +15,9 @@
 1. git / .NET SDK 10 の確認・導入
 2. `aidd-script` 自身を `~/.aidd/aidd-script` へ clone し、そこから `aidd` CLI を `~/.aidd/aidd-script/publish` へ発行
 3. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-docs）を clone・発行
-4. git リポジトリの初期化・pre-commit フック（`.githooks/`）の配線
-5. `ai-harness-main --init --enable ai-harness-aidd` でこのプロジェクトへ hook を配線し、`--doctor` / `--validate` で動作確認
+4. 各ツールの `publish/` を PATH へ追加し、`aidd --version` / `ai-harness-main --doctor` / `aidd-create-docs --version` で動作確認
+
+プロジェクトには触れない（プロジェクトの配線・初期化は行わない）。
 
 再実行しても安全（各手順は導入済みなら読み飛ばす。ただし `aidd --update-aidd` が管理するツール一式は
 仕様上、毎回最新へ差し替わる）。
@@ -34,7 +35,7 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 .\aidd-setup.ps1
 ```
 
-いずれも対象プロジェクトのルートディレクトリで実行する。
+実行するディレクトリは問わない。
 
 共通オプション（`setup.sh` / `setup.ps1` とも。書式は `--org <値>` で統一）:
 
@@ -50,11 +51,14 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 ## aidd CLI（`src/main/`）
 
 ```
+aidd --version
 aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>]
 aidd --update-project
 ```
 
-2 つは対象が異なる。`--update-aidd` は `~/.aidd`（マシン側）、`--update-project` はカレントディレクトリ（プロジェクト側）。
+- **`aidd --version`** — `aidd <バージョン>+<コミット>` を標準出力へ出す（バージョンは `aidd.csproj` の `<Version>`）。引数は取らない。setup の動作確認が使う
+
+`--update-aidd` と `--update-project` は対象が異なる。`--update-aidd` は `~/.aidd`（マシン側）、`--update-project` はカレントディレクトリ（プロジェクト側）。
 
 - **`aidd --update-aidd`** — `~/.aidd/<repo>` に ai-harness-main・aidd-create-docs・aidd-docs の clone を
   置き、指定した org/branch と比べて**差分があるときだけ**更新する（`git fetch` → HEAD と比較 →

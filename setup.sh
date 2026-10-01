@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# aidd-template ベースのプロジェクトをセットアップするスクリプト。
+# aidd のツールをインストール・セットアップするスクリプト（PATH の追加を含む）。
 # git / .NET SDK 10 を確認し、無ければ導入したうえで、aidd-script 本体（aidd CLI）を
-# $HOME/.aidd/aidd へ発行する。以降のツール一式（ai-harness-main / aidd-create-docs /
-# aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
-# あわせて ai-harness-main はこのプロジェクトへ配線する
-# （.claude/settings.json の hook 追記 ＋ ai-harness-aidd の有効化）。
-# あわせて git の pre-commit フック（.githooks/）を配線する。
+# $HOME/.aidd/aidd-script/publish へ発行する。以降のツール一式（ai-harness-main /
+# aidd-create-docs / aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
+# プロジェクトには触れない（プロジェクトの配線・初期化は行わない）。
 #
-# curl 等でダウンロードしてから実行する delivery を想定し、対象プロジェクトの
-# ルートディレクトリで実行する（スクリプト自身の設置場所は問わない。PROJECT_ROOT は
-# 実行時のカレントディレクトリ）。
+# curl 等でダウンロードしてから実行する delivery を想定する（実行時のカレントディレクトリや
+# スクリプト自身の設置場所は問わない）。
 #
 # 再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update-aidd が管理する
 # ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update-aidd の仕様どおり毎回最新へ
@@ -36,7 +33,6 @@ AIDD_REPO_DIR="${INSTALL_DIR}/aidd-script"
 AIDD_INSTALL_DIR="${AIDD_REPO_DIR}/publish"
 HARNESS_INSTALL_DIR="${INSTALL_DIR}/ai-harness-main/publish"
 CREATE_DOCS_INSTALL_DIR="${INSTALL_DIR}/aidd-create-docs/publish"
-PROJECT_ROOT="$(pwd)"
 PROFILE_FILE="${HOME}/.bashrc"
 
 while [ $# -gt 0 ]; do
@@ -198,55 +194,21 @@ update_tool_suite() {
   add_dir_to_path "$CREATE_DOCS_INSTALL_DIR"
 }
 
-initialize_git_repo() {
-  if git -C "$PROJECT_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    log "git リポジトリ: OK"
-    return
-  fi
-
-  log "このプロジェクトはまだ git リポジトリではありません。初期化して初回コミットを作成します…"
-  git -C "$PROJECT_ROOT" init -q
-  git -C "$PROJECT_ROOT" add -A
-  git -C "$PROJECT_ROOT" commit -q -m "chore: aidd-template から初期化"
-}
-
-configure_git_hooks() {
-  chmod +x "${PROJECT_ROOT}/.githooks/pre-commit" 2>/dev/null || true
-
-  local current
-  current="$(git -C "$PROJECT_ROOT" config --local --get core.hooksPath || true)"
-  if [ "$current" = ".githooks" ]; then
-    log "git hooks: OK（core.hooksPath は設定済み）"
-    return
-  fi
-
-  log "git hooks を配線します（core.hooksPath=.githooks）…"
-  git -C "$PROJECT_ROOT" config --local core.hooksPath .githooks
-}
-
 main() {
   install_git
   install_dotnet_sdk
   build_aidd
   update_tool_suite
-  initialize_git_repo
-  configure_git_hooks
 
   local exe="${HARNESS_INSTALL_DIR}/ai-harness-main"
   local create_docs_exe="${CREATE_DOCS_INSTALL_DIR}/aidd-create-docs"
 
-  log "プロジェクトを配線します（settings.json の hook ＋ ai-harness-aidd の有効化）…"
-  "$exe" --init "$PROJECT_ROOT" --enable ai-harness-aidd
-
   log "動作確認…"
+  "${AIDD_INSTALL_DIR}/aidd" --version
   "$exe" --doctor
-  if ! "$exe" --validate "$PROJECT_ROOT"; then
-    echo "[setup] --validate が失敗しました。上記のログを確認してください。" >&2
-    exit 1
-  fi
   "$create_docs_exe" --version
 
-  log "セットアップ完了。Claude Code を再起動してください。"
+  log "セットアップ完了。"
 }
 
 main "$@"

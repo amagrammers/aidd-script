@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace Aidd;
@@ -16,7 +17,8 @@ internal static class Program
     {
         if (args.Length == 0)
         {
-            return Fail("使い方: aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>] | " +
+            return Fail("使い方: aidd --version | " +
+                         "aidd --update-aidd [--protocol https|ssh] [--ssh-name <name>] [--org <org>] [--branch <branch>] | " +
                          "aidd --update-project");
         }
 
@@ -26,6 +28,9 @@ internal static class Program
 
             switch (command)
             {
+                case "--version":
+                    RunVersion(args.Skip(1).ToArray());
+                    return 0;
                 case "--update-aidd":
                     RunUpdateAidd(ParseOptions(args.Skip(1).ToArray()));
                     return 0;
@@ -105,6 +110,22 @@ internal static class Program
             "ssh" => $"git@{sshName ?? "github.com"}:{org}/{repoName}.git",
             _ => throw new AiddException($"--protocol は https か ssh のいずれかです: {protocol}"),
         };
+    }
+
+    // ---- --version（バージョンを標準出力へ。setup の動作確認が使う） ----
+
+    private static void RunVersion(IReadOnlyList<string> args)
+    {
+        if (args.Count > 0)
+        {
+            throw new AiddException($"--version は引数を取りません: {args[0]}");
+        }
+
+        // csproj の <Version>。SDK が付ける「+<コミット>」も含めて表示する
+        var version = typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? throw new AiddException("バージョン情報を取得できません。");
+        Console.WriteLine($"aidd {version}");
     }
 
     // ---- --update-aidd（~/.aidd のツール一式: ai-harness-main / aidd-create-docs / aidd-docs） ----
