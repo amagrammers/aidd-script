@@ -9,29 +9,27 @@ internal static class Program
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".aidd");
     private static readonly string HarnessInstallDir = Path.Combine(InstallDir, "ai-harness-main");
     private static readonly string CreateDocsInstallDir = Path.Combine(InstallDir, "aidd-create-docs");
-    private static readonly string TemplateInstallDir = Path.Combine(InstallDir, "aidd-template");
     private static readonly string DocsInstallDir = Path.Combine(InstallDir, "aidd-docs");
 
     private static int Main(string[] args)
     {
         if (args.Length == 0)
         {
-            return Fail("使い方: aidd --update [--protocol https|ssh] [--org <org>] [--branch <branch>] | " +
-                         "aidd --init [--protocol https|ssh] [--org <org>] [--branch <branch>]");
+            return Fail("使い方: aidd --update-aidd [--protocol https|ssh] [--org <org>] [--branch <branch>] | " +
+                         "aidd --update-project");
         }
 
         try
         {
             var command = args[0];
-            var options = ParseOptions(args.Skip(1).ToArray());
 
             switch (command)
             {
-                case "--update":
-                    RunUpdate(options);
+                case "--update-aidd":
+                    RunUpdateAidd(ParseOptions(args.Skip(1).ToArray()));
                     return 0;
-                case "--init":
-                    RunInit(options);
+                case "--update-project":
+                    RunUpdateProject(args.Skip(1).ToArray());
                     return 0;
                 default:
                     return Fail($"不明な引数です: {command}");
@@ -99,9 +97,9 @@ internal static class Program
         _ => throw new AiddException($"--protocol は https か ssh のいずれかです: {protocol}"),
     };
 
-    // ---- --update（.aidd のツール一式: ai-harness-main / aidd-create-docs / aidd-docs） ----
+    // ---- --update-aidd（~/.aidd のツール一式: ai-harness-main / aidd-create-docs / aidd-docs） ----
 
-    private static void RunUpdate(IReadOnlyDictionary<string, string> options)
+    private static void RunUpdateAidd(IReadOnlyDictionary<string, string> options)
     {
         ValidateOptions(options, "protocol", "org", "branch");
         var protocol = GetOption(options, "protocol", "https");
@@ -243,29 +241,48 @@ internal static class Program
         return File.Exists(exePath) ? exePath : null;
     }
 
-    // ---- --init（プロジェクトのセットアップ。aidd-template と aidd-docs/core をカレントディレクトリへ展開） ----
+    // ---- --update-project（~/.aidd/aidd-docs/core でカレントディレクトリの .docs/ を置換。取得はしない） ----
 
-    private static void RunInit(IReadOnlyDictionary<string, string> options)
+    private static void RunUpdateProject(IReadOnlyList<string> args)
     {
-        ValidateOptions(options, "protocol", "org", "branch");
-        var protocol = GetOption(options, "protocol", "https");
-        var org = GetOption(options, "org", "amagrammers");
-        var branch = GetOption(options, "branch", "main");
-
-        RequireCommand("git");
-        RefreshPlainCheckout(BuildRepoUrl(protocol, org, "aidd-template"), branch, TemplateInstallDir, "aidd-template");
-        RefreshPlainCheckout(BuildRepoUrl(protocol, org, "aidd-docs"), branch, DocsInstallDir, "aidd-docs");
+        if (args.Count > 0)
+        {
+            throw new AiddException($"--update-project は引数を取りません: {args[0]}");
+        }
 
         var docsCoreDir = Path.Combine(DocsInstallDir, "core");
         if (!Directory.Exists(docsCoreDir))
         {
-            throw new AiddException($"{docsCoreDir} がありません。aidd-docs 側の構成を確認してください。");
+            throw new AiddException($"{docsCoreDir} がありません。先に aidd --update-aidd を実行してください。");
         }
 
-        InitializeProjectFromCheckouts(docsCoreDir);
+        var target = Path.Combine(Directory.GetCurrentDirectory(), ".docs");
+        // 途中で失敗しても既存の .docs/ を失わないよう、隣へ全件コピーしてから差し替える。
+        var staging = target + ".new";
+        TryDelete(staging);
+        try
+        {
+            var count = 0;
+            foreach (var src in Directory.EnumerateFiles(docsCoreDir, "*", SearchOption.AllDirectories))
+            {
+                var dest = Path.Combine(staging, Path.GetRelativePath(docsCoreDir, src));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(src, dest);
+                count++;
+            }
+
+            if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+            Directory.Move(staging, target);
+            Log($"aidd-docs/core の {count} ファイルで {target} を置換しました。");
+        }
+        catch
+        {
+            TryDelete(staging);
+            throw;
+        }
     }
 
-    // git clone のみで dotnet ビルドを伴わない取得（aidd-template / aidd-docs で共用）。
+    // git clone のみで dotnet ビルドを伴わない取得。
     // 毎回 clone し直して丸ごと置き換える（差分 pull はしない）。
     private static void RefreshPlainCheckout(string repoUrl, string branch, string installDir, string label)
     {
@@ -287,49 +304,6 @@ internal static class Program
             throw;
         }
         Log($"{label} を取得しました: {installDir}");
-    }
-
-    // aidd-template と aidd-docs/core の 2 つを 1 回の操作として展開する（一部だけ書いて
-    // 失敗する状態を避けるため、書き込み前に両方の衝突を検査してから実際のコピーへ進む）。
-    // .docs/ は aidd-docs が正本なので、aidd-template 側に .docs/ があってもそちらは使わない
-    // （update.sh の sync_docs が .docs を都度 aidd-docs から作り直すのと同じ扱い）。
-    private static void InitializeProjectFromCheckouts(string docsCoreDir)
-    {
-        var dest = Directory.GetCurrentDirectory();
-
-        var templateFiles = Directory.EnumerateFiles(TemplateInstallDir, "*", SearchOption.AllDirectories)
-            .Where(f => !IsUnderTopLevelDir(TemplateInstallDir, f, ".git"))
-            .Where(f => !IsUnderTopLevelDir(TemplateInstallDir, f, ".docs"))
-            .Select(f => (Source: f, Target: Path.Combine(dest, Path.GetRelativePath(TemplateInstallDir, f))))
-            .ToList();
-
-        var docsFiles = Directory.EnumerateFiles(docsCoreDir, "*", SearchOption.AllDirectories)
-            .Select(f => (Source: f, Target: Path.Combine(dest, ".docs", Path.GetRelativePath(docsCoreDir, f))))
-            .ToList();
-
-        var all = templateFiles.Concat(docsFiles).ToList();
-
-        var conflicts = all.Select(x => x.Target).Where(File.Exists).ToList();
-        if (conflicts.Count > 0)
-        {
-            var list = string.Join("\n", conflicts.Select(c => "            " + c));
-            throw new AiddException($"以下のファイルが既に存在するため中断しました。何も変更していません:\n{list}");
-        }
-
-        foreach (var (src, target) in all)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(src, target);
-        }
-
-        Log($"aidd-template から {templateFiles.Count} ファイル、aidd-docs/core から {docsFiles.Count} " +
-            $"ファイルを {dest} へコピーしました。");
-    }
-
-    private static bool IsUnderTopLevelDir(string root, string filePath, string topLevelName)
-    {
-        var rel = Path.GetRelativePath(root, filePath);
-        return rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0] == topLevelName;
     }
 
     // ---- process helpers ----

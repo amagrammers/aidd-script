@@ -2,8 +2,7 @@
 # aidd-template ベースのプロジェクトをセットアップするスクリプト。
 # git / .NET SDK 10 を確認し、無ければ導入したうえで、aidd-script 本体（aidd CLI）を
 # $HOME/.aidd/aidd へ発行する。以降のツール一式（ai-harness-main / aidd-create-docs /
-# aidd-docs）の導入と、aidd-template からのプロジェクト初期化は、発行した aidd CLI
-# （`aidd --update` / `aidd --init`）に委譲する。
+# aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
 # あわせて ai-harness-main はこのプロジェクトへ配線する
 # （.claude/settings.json の hook 追記 ＋ ai-harness-aidd の有効化）。
 # あわせて git の pre-commit フック（.githooks/）を配線する。
@@ -12,8 +11,8 @@
 # ルートディレクトリで実行する（スクリプト自身の設置場所は問わない。PROJECT_ROOT は
 # 実行時のカレントディレクトリ）。
 #
-# 再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update が管理する
-# ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update の仕様どおり毎回最新へ
+# 再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update-aidd が管理する
+# ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update-aidd の仕様どおり毎回最新へ
 # 差し替わる）。
 
 set -euo pipefail
@@ -124,7 +123,7 @@ install_dotnet_sdk() {
   command -v dotnet >/dev/null 2>&1 || { echo "[setup] .NET SDK のインストールに失敗しました。" >&2; exit 1; }
 }
 
-# aidd CLI 自身は aidd --update の対象外（自己更新はしない）。再実行時は既に発行済みなら
+# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
 # 読み飛ばす。最新へ差し替えたい場合はこの関数を直接呼び直すか、$AIDD_INSTALL_DIR を消してから
 # 再実行する。
 build_aidd() {
@@ -172,27 +171,14 @@ add_dir_to_path() {
   esac
 }
 
-# ai-harness-main / aidd-create-docs / aidd-docs の発行・取得は aidd --update に委譲する
+# ai-harness-main / aidd-create-docs / aidd-docs の発行・取得は aidd --update-aidd に委譲する
 # （aidd-script/src/main/Program.cs 側と二重にロジックを持たないため）。
 update_tool_suite() {
   add_dir_to_path "$AIDD_INSTALL_DIR"
-  log ".aidd のツール一式を aidd --update で発行します…"
-  "${AIDD_INSTALL_DIR}/aidd" --update --protocol "$PROTOCOL" --org "$ORG" --branch "$BRANCH"
+  log ".aidd のツール一式を aidd --update-aidd で発行します…"
+  "${AIDD_INSTALL_DIR}/aidd" --update-aidd --protocol "$PROTOCOL" --org "$ORG" --branch "$BRANCH"
   add_dir_to_path "$HARNESS_INSTALL_DIR"
   add_dir_to_path "$CREATE_DOCS_INSTALL_DIR"
-}
-
-# カレントディレクトリがまだ aidd-template 由来のプロジェクトでなければ、aidd --init に
-# 委譲してプロジェクトをセットアップする（aidd-template の中身 ＋ aidd-docs/core を .docs/ として
-# 展開する。既に .claude/ があるプロジェクトへの再実行では飛ばす）。
-init_project_from_template() {
-  if [ -d "${PROJECT_ROOT}/.claude" ]; then
-    log "プロジェクトの初期化: OK（.claude/ が既にあります）"
-    return
-  fi
-
-  log "aidd --init でプロジェクトをセットアップします（aidd-template ＋ aidd-docs/core → .docs/）…"
-  "${AIDD_INSTALL_DIR}/aidd" --init --protocol "$PROTOCOL" --org "$ORG" --branch "$BRANCH"
 }
 
 initialize_git_repo() {
@@ -226,7 +212,6 @@ main() {
   install_dotnet_sdk
   build_aidd
   update_tool_suite
-  init_project_from_template
   initialize_git_repo
   configure_git_hooks
 

@@ -3,8 +3,7 @@
 aidd-template ベースのプロジェクトをセットアップするスクリプト。
 git / .NET SDK 10 を確認し、無ければ導入したうえで、aidd-script 本体（aidd CLI）を
 $env:USERPROFILE\.aidd\aidd へ発行する。以降のツール一式（ai-harness-main / aidd-create-docs /
-aidd-docs）の導入と、aidd-template からのプロジェクト初期化は、発行した aidd CLI
-（`aidd --update` / `aidd --init`）に委譲する。
+aidd-docs）の導入は、発行した aidd CLI（`aidd --update-aidd`）に委譲する。
 あわせて ai-harness-main はこのプロジェクトへ配線する
 （.claude/settings.json の hook 追記 ＋ ai-harness-aidd の有効化）。
 あわせて git の pre-commit フック（.githooks/）を配線する。
@@ -13,8 +12,8 @@ Invoke-WebRequest 等でダウンロードしてから実行する delivery を�
 ルートディレクトリで実行する（スクリプト自身の設置場所は問わない。$ProjectRoot は
 実行時のカレントディレクトリ）。
 
-再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update が管理する
-ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update の仕様どおり毎回最新へ
+再実行しても安全（各手順は導入済みなら読み飛ばす。ただし aidd --update-aidd が管理する
+ai-harness-main / aidd-create-docs / aidd-docs は、aidd --update-aidd の仕様どおり毎回最新へ
 差し替わる）。
 #>
 
@@ -93,7 +92,7 @@ function Install-DotNetSdk {
     }
 }
 
-# aidd CLI 自身は aidd --update の対象外（自己更新はしない）。再実行時は既に発行済みなら
+# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
 # 読み飛ばす。最新へ差し替えたい場合は $AiddInstallDir を消してから再実行する。
 function Build-Aidd {
     $exePath = Join-Path $AiddInstallDir 'aidd.exe'
@@ -143,31 +142,16 @@ function Add-InstallDirToUserPath([string]$Dir) {
     Sync-PathFromEnvironment
 }
 
-# ai-harness-main / aidd-create-docs / aidd-docs の発行・取得は aidd --update に委譲する
+# ai-harness-main / aidd-create-docs / aidd-docs の発行・取得は aidd --update-aidd に委譲する
 # （aidd-script/src/main/Program.cs 側と二重にロジックを持たないため）。
 function Update-ToolSuite {
     Add-InstallDirToUserPath $AiddInstallDir
-    Write-Step '.aidd のツール一式を aidd --update で発行します…'
+    Write-Step '.aidd のツール一式を aidd --update-aidd で発行します…'
     $aiddExe = Join-Path $AiddInstallDir 'aidd.exe'
-    & $aiddExe --update --protocol $Protocol --org $Org --branch $Branch
-    if ($LASTEXITCODE -ne 0) { throw 'aidd --update に失敗しました。' }
+    & $aiddExe --update-aidd --protocol $Protocol --org $Org --branch $Branch
+    if ($LASTEXITCODE -ne 0) { throw 'aidd --update-aidd に失敗しました。' }
     Add-InstallDirToUserPath $HarnessInstallDir
     Add-InstallDirToUserPath $CreateDocsInstallDir
-}
-
-# カレントディレクトリがまだ aidd-template 由来のプロジェクトでなければ、aidd --init に
-# 委譲してプロジェクトをセットアップする（aidd-template の中身 ＋ aidd-docs/core を .docs/ として
-# 展開する。既に .claude/ があるプロジェクトへの再実行では飛ばす）。
-function Initialize-ProjectFromTemplate {
-    if (Test-Path (Join-Path $ProjectRoot '.claude')) {
-        Write-Step 'プロジェクトの初期化: OK（.claude/ が既にあります）'
-        return
-    }
-
-    Write-Step 'aidd --init でプロジェクトをセットアップします（aidd-template ＋ aidd-docs/core → .docs/）…'
-    $aiddExe = Join-Path $AiddInstallDir 'aidd.exe'
-    & $aiddExe --init --protocol $Protocol --org $Org --branch $Branch
-    if ($LASTEXITCODE -ne 0) { throw 'aidd --init に失敗しました。' }
 }
 
 function Initialize-GitRepo {
@@ -203,7 +187,6 @@ Install-Git
 Install-DotNetSdk
 Build-Aidd
 Update-ToolSuite
-Initialize-ProjectFromTemplate
 Initialize-GitRepo
 Set-GitHooksPath
 
@@ -223,4 +206,4 @@ if ($LASTEXITCODE -ne 0) {
 & $createDocsExe --version
 if ($LASTEXITCODE -ne 0) { throw 'aidd-create-docs --version に失敗しました。' }
 
-Write-Step 'セットアップ完了。Claude Code を再起動してください。'
+Write-Step 'セットアップが完了しました。'
