@@ -70,7 +70,7 @@ aidd --update-project
 
 ```
 ~/.aidd/
-  aidd-script/        clone（setup が配置。自己更新はしない）
+  aidd-script/        clone（setup が配置・更新する。`--update-aidd` の対象外）
     publish/          aidd 実行体（PATH）
   ai-harness-main/    clone
     publish/          ai-harness-main 実行体と lib/（PATH）

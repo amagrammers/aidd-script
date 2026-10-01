@@ -113,20 +113,38 @@ function Install-DotNetSdk {
     }
 }
 
-# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
-# 読み飛ばす。最新へ差し替えたい場合は $AiddRepoDir を消してから再実行する。
+# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）ため、setup が更新する。
+# clone と remote の差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
 function Build-Aidd {
     $exePath = Join-Path $AiddInstallDir 'aidd.exe'
-    if (Test-Path $exePath) {
-        Write-Step "aidd: OK ($exePath)"
-        return
-    }
+    $changed = $false
 
     if (-not (Test-Path (Join-Path $AiddRepoDir '.git'))) {
         Write-Step "aidd-script を $AiddRepoDir へ clone します（branch: $Branch）…"
         Remove-Item -Recurse -Force $AiddRepoDir -ErrorAction SilentlyContinue
         & git clone --quiet --depth 1 --branch $Branch $AiddScriptRepoUrl $AiddRepoDir
         if ($LASTEXITCODE -ne 0) { throw 'aidd-script のクローンに失敗しました。' }
+        $changed = $true
+    }
+    else {
+        # org / protocol / ssh-name の変更に追随するため、毎回 remote を指定どおりに揃える
+        & git -C $AiddRepoDir remote set-url origin $AiddScriptRepoUrl
+        if ($LASTEXITCODE -ne 0) { throw 'git remote set-url に失敗しました。' }
+        & git -C $AiddRepoDir fetch --quiet --depth 1 origin $Branch
+        if ($LASTEXITCODE -ne 0) { throw 'aidd-script の fetch に失敗しました。' }
+        $head = (& git -C $AiddRepoDir rev-parse HEAD)
+        $remote = (& git -C $AiddRepoDir rev-parse FETCH_HEAD)
+        if ($head -ne $remote) {
+            Write-Step 'aidd-script に差分があります。更新します…'
+            & git -C $AiddRepoDir reset --quiet --hard FETCH_HEAD
+            if ($LASTEXITCODE -ne 0) { throw 'git reset に失敗しました。' }
+            $changed = $true
+        }
+    }
+
+    if ((-not $changed) -and (Test-Path $exePath)) {
+        Write-Step "aidd: OK ($exePath)"
+        return
     }
 
     Write-Step "aidd を $AiddInstallDir へ発行します（self-contained 単一ファイル）…"

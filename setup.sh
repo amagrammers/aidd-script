@@ -132,19 +132,31 @@ install_dotnet_sdk() {
   command -v dotnet >/dev/null 2>&1 || { echo "[setup] .NET SDK のインストールに失敗しました。" >&2; exit 1; }
 }
 
-# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）。再実行時は既に発行済みなら
-# 読み飛ばす。最新へ差し替えたい場合は $AIDD_REPO_DIR を消してから再実行する。
+# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）ため、setup が更新する。
+# clone と remote の差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
 build_aidd() {
   local exe_path="${AIDD_INSTALL_DIR}/aidd"
-  if [ -x "$exe_path" ]; then
-    log "aidd: OK ($exe_path)"
-    return
-  fi
+  local changed=0
 
   if [ ! -d "${AIDD_REPO_DIR}/.git" ]; then
     log "aidd-script を ${AIDD_REPO_DIR} へ clone します（branch: ${BRANCH}）…"
     rm -rf "$AIDD_REPO_DIR"
     git clone --quiet --depth 1 --branch "$BRANCH" "$AIDD_SCRIPT_REPO_URL" "$AIDD_REPO_DIR"
+    changed=1
+  else
+    # org / protocol / ssh-name の変更に追随するため、毎回 remote を指定どおりに揃える
+    git -C "$AIDD_REPO_DIR" remote set-url origin "$AIDD_SCRIPT_REPO_URL"
+    git -C "$AIDD_REPO_DIR" fetch --quiet --depth 1 origin "$BRANCH"
+    if [ "$(git -C "$AIDD_REPO_DIR" rev-parse HEAD)" != "$(git -C "$AIDD_REPO_DIR" rev-parse FETCH_HEAD)" ]; then
+      log "aidd-script に差分があります。更新します…"
+      git -C "$AIDD_REPO_DIR" reset --quiet --hard FETCH_HEAD
+      changed=1
+    fi
+  fi
+
+  if [ "$changed" -eq 0 ] && [ -x "$exe_path" ]; then
+    log "aidd: OK ($exe_path)"
+    return
   fi
 
   log "aidd を ${AIDD_INSTALL_DIR} へ発行します（self-contained 単一ファイル）…"
