@@ -24,7 +24,7 @@ export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 # 5 リポジトリはすべて同一 org 配下。URL は「PROTOCOL + ORG/<リポジトリ>.git」で組む。
 PROTOCOL="https"   # https | ssh
-SSH_NAME=""        # ssh のときの <ssh-name>@github.com の部分。未指定なら git
+SSH_NAME=""        # ssh のときの git@<ssh-name>:... のホスト部分（~/.ssh/config の Host エイリアス）。未指定なら github.com
 ORG="amagrammers"
 BRANCH="main"
 INSTALL_DIR="${HOME}/.aidd"
@@ -56,7 +56,7 @@ fi
 
 case "$PROTOCOL" in
   https) AIDD_SCRIPT_REPO_URL="https://github.com/${ORG}/aidd-script.git" ;;
-  ssh)   AIDD_SCRIPT_REPO_URL="${SSH_NAME:-git}@github.com:${ORG}/aidd-script.git" ;;
+  ssh)   AIDD_SCRIPT_REPO_URL="git@${SSH_NAME:-github.com}:${ORG}/aidd-script.git" ;;
   *) echo "[setup] --protocol は https か ssh のいずれかです: $PROTOCOL" >&2; exit 1 ;;
 esac
 

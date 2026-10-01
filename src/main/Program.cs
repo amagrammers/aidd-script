@@ -91,8 +91,8 @@ internal static class Program
     private static string GetOption(IReadOnlyDictionary<string, string> options, string name, string defaultValue)
         => options.TryGetValue(name, out var value) ? value : defaultValue;
 
-    // sshName は ssh のときだけ意味を持つ（git@github.com の「git」の部分）。https で指定されたら
-    // 黙って無視せずエラーにする。
+    // sshName は ssh のときだけ意味を持つ（~/.ssh/config の Host エイリアス名。git@<sshName>:... の
+    // ホスト部分）。未指定は github.com。https で指定されたら黙って無視せずエラーにする。
     private static string BuildRepoUrl(string protocol, string? sshName, string org, string repoName)
     {
         if (protocol != "ssh" && sshName is not null)
@@ -102,7 +102,7 @@ internal static class Program
         return protocol switch
         {
             "https" => $"https://github.com/{org}/{repoName}.git",
-            "ssh" => $"{sshName ?? "git"}@github.com:{org}/{repoName}.git",
+            "ssh" => $"git@{sshName ?? "github.com"}:{org}/{repoName}.git",
             _ => throw new AiddException($"--protocol は https か ssh のいずれかです: {protocol}"),
         };
     }

@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 # setup.sh と引数の書式を揃えるため、param() ではなく $args を自前で解釈する
 # （param() だと -Org 形式になり、--org が位置引数として別の引数へ束縛されてしまう）。
 $Protocol = 'https'   # https | ssh
-$SshName = $null      # ssh のときの <ssh-name>@github.com の部分。未指定なら git
+$SshName = $null      # ssh のときの git@<ssh-name>:... のホスト部分（~/.ssh/config の Host エイリアス）。未指定なら github.com
 $Org = 'amagrammers'
 $Branch = 'main'
 
@@ -47,7 +47,11 @@ if ($SshName -and $Protocol -ne 'ssh') {
 
 switch ($Protocol) {
     'https' { $AiddScriptRepoUrl = "https://github.com/$Org/aidd-script.git" }
-    'ssh'   { $AiddScriptRepoUrl = "$(if ($SshName) { $SshName } else { 'git' })@github.com`:$Org/aidd-script.git" }
+    'ssh'   {
+        $sshHost = if ($SshName) { $SshName } else { 'github.com' }
+        # "$sshHost:" は変数名のスコープ修飾と解釈されるため ${} で区切る
+        $AiddScriptRepoUrl = "git@${sshHost}:$Org/aidd-script.git"
+    }
 }
 
 $InstallDir = Join-Path $env:USERPROFILE '.aidd'
