@@ -7,12 +7,12 @@ aidd のツール（ai-harness-main / aidd-create-docs / aidd-template / aidd-do
 
 | パス | 役割 |
 | -- | -- |
-| `setup.sh` / `setup.ps1` | 初回ブートストラップ用スクリプト。curl/`Invoke-WebRequest` でダウンロードしてから実行する delivery を想定する |
+| `setup.sh`（Linux / WSL）/ `setup_macos.sh`（macOS）/ `setup.ps1`（Windows） | 初回ブートストラップ用スクリプト。curl/`Invoke-WebRequest` でダウンロードしてから実行する delivery を想定する |
 | `src/main/` | `aidd` CLI 本体（`aidd.csproj`）のソース |
 
-## setup.sh / setup.ps1 が行うこと
+## setup.sh / setup_macos.sh / setup.ps1 が行うこと
 
-1. git / .NET SDK 10 の確認・導入
+1. git / .NET SDK 10 の確認・導入（Linux は各ディストリのパッケージマネージャ、macOS は Homebrew〔無ければ Homebrew 自体も導入〕、Windows は winget）
 2. `aidd-script` 自身を `~/.aidd/aidd-script` へ clone し、そこから `aidd` CLI を `~/.aidd/aidd-script/publish` へ発行
 3. `aidd-template` を `~/.aidd/aidd-template` へ clone（既にあれば差分があるときだけ更新。`aidd --init` が中身をコピーする）
 4. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-template / aidd-docs / aidd-script）を clone・発行
@@ -31,6 +31,15 @@ curl -fsSL -o /tmp/aidd-setup.sh https://raw.githubusercontent.com/amagrammers/a
 bash /tmp/aidd-setup.sh
 ```
 
+```bash
+# macOS
+curl -fsSL -o /tmp/aidd-setup-macos.sh https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup_macos.sh
+bash /tmp/aidd-setup-macos.sh
+```
+
+macOS 版は PATH を `~/.zshrc`（`$SHELL` が bash のときは `~/.bash_profile`）へ書く。Apple Silicon（`osx-arm64`）と
+Intel（`osx-x64`）の両方に対応し、macOS 以外で実行するとエラーで止まる。
+
 ```powershell
 irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -OutFile aidd-setup.ps1
 .\aidd-setup.ps1
@@ -38,7 +47,7 @@ irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -Ou
 
 実行するディレクトリは問わない。
 
-共通オプション（`setup.sh` / `setup.ps1` とも。書式は `--org <値>` で統一）:
+共通オプション（`setup.sh` / `setup_macos.sh` / `setup.ps1` とも。書式は `--org <値>` で統一）:
 
 | オプション | 既定値 | 内容 |
 | -- | -- | -- |
