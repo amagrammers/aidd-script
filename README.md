@@ -30,19 +30,23 @@ bash /tmp/aidd-setup.sh
 ```
 
 ```powershell
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -OutFile "$env:TEMP\aidd-setup.ps1"
-& "$env:TEMP\aidd-setup.ps1"
+irm https://raw.githubusercontent.com/amagrammers/aidd-script/main/setup.ps1 -OutFile aidd-setup.ps1
+.\aidd-setup.ps1
 ```
 
 いずれも対象プロジェクトのルートディレクトリで実行する。
 
-共通オプション（`setup.sh` / `setup.ps1` とも）:
+共通オプション:
 
-| オプション | 既定値 | 内容 |
-| -- | -- | -- |
-| `--protocol` | `https` | リポジトリ取得プロトコル（`https` / `ssh`） |
-| `--org` | `amagrammers` | 取得元の GitHub org |
-| `--branch` | `main` | 取得元ブランチ |
+| `setup.sh` | `setup.ps1` | 既定値 | 内容 |
+| -- | -- | -- | -- |
+| `--protocol` | `-Protocol` | `https` | リポジトリ取得プロトコル（`https` / `ssh`） |
+| `--org` | `-Org` | `amagrammers` | 取得元の GitHub org |
+| `--branch` | `-Branch` | `main` | 取得元ブランチ |
+
+`setup.ps1` は PowerShell の `param()` なのでハイフン 1 つ・PascalCase で指定する
+（例: `.\aidd-setup.ps1 -Org rgp-lab`）。`--org` と書くと位置引数として `-Protocol` に束縛され、
+ValidateSet のエラーになる。
 
 ## aidd CLI（`src/main/`）
 
