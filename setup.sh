@@ -30,6 +30,7 @@ INSTALL_DIR="${HOME}/.aidd"
 # しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。ツールごとに別の
 # publish/ を持たせ、発行先・PATH 登録とも独立させる。
 AIDD_REPO_DIR="${INSTALL_DIR}/aidd-script"
+TEMPLATE_REPO_DIR="${INSTALL_DIR}/aidd-template"
 AIDD_INSTALL_DIR="${AIDD_REPO_DIR}/publish"
 HARNESS_INSTALL_DIR="${INSTALL_DIR}/ai-harness-main/publish"
 CREATE_DOCS_INSTALL_DIR="${INSTALL_DIR}/aidd-create-docs/publish"
@@ -128,8 +129,9 @@ install_dotnet_sdk() {
   command -v dotnet >/dev/null 2>&1 || { echo "[setup] .NET SDK のインストールに失敗しました。" >&2; exit 1; }
 }
 
-# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）ため、setup が更新する。
-# clone と remote の差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
+# aidd CLI の初回導入（以降の更新は aidd --update-aidd が行う）。再実行時は旧版の aidd で
+# 引数が通らない問題を避けるため、ここでも clone と remote の差分確認をする。
+# 差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
 build_aidd() {
   local exe_path="${AIDD_INSTALL_DIR}/aidd"
   local changed=0
@@ -167,6 +169,32 @@ build_aidd() {
   log "aidd を発行しました: ${exe_path}"
 }
 
+# aidd-template を ~/.aidd/aidd-template へ clone する（aidd --init が中身をコピーする）。
+# 既にあれば remote を指定どおりに揃えて fetch し、差分があるときだけ更新する。
+sync_template() {
+  local url
+  case "$PROTOCOL" in
+    https) url="https://github.com/${ORG}/aidd-template.git" ;;
+    ssh)   url="git@${SSH_NAME:-github.com}:${ORG}/aidd-template.git" ;;
+  esac
+
+  if [ ! -d "${TEMPLATE_REPO_DIR}/.git" ]; then
+    log "aidd-template を ${TEMPLATE_REPO_DIR} へ clone します（branch: ${BRANCH}）…"
+    rm -rf "$TEMPLATE_REPO_DIR"
+    git clone --quiet --depth 1 --branch "$BRANCH" "$url" "$TEMPLATE_REPO_DIR"
+    return
+  fi
+
+  git -C "$TEMPLATE_REPO_DIR" remote set-url origin "$url"
+  git -C "$TEMPLATE_REPO_DIR" fetch --quiet --depth 1 origin "$BRANCH"
+  if [ "$(git -C "$TEMPLATE_REPO_DIR" rev-parse HEAD)" != "$(git -C "$TEMPLATE_REPO_DIR" rev-parse FETCH_HEAD)" ]; then
+    log "aidd-template に差分があります。更新します…"
+    git -C "$TEMPLATE_REPO_DIR" reset --quiet --hard FETCH_HEAD
+  else
+    log "aidd-template: OK（差分なし）"
+  fi
+}
+
 add_dir_to_path() {
   local dir="$1"
   local path_line="export PATH=\"${dir}:\$PATH\""
@@ -198,6 +226,7 @@ main() {
   install_git
   install_dotnet_sdk
   build_aidd
+  sync_template
   update_tool_suite
 
   local exe="${HARNESS_INSTALL_DIR}/ai-harness-main"

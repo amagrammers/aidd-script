@@ -11,6 +11,7 @@ internal static class Program
     // ~/.aidd/<repo> は各リポジトリの clone。ビルド成果物は <repo>/publish に置く。
     private static readonly string HarnessRepoDir = Path.Combine(InstallDir, "ai-harness-main");
     private static readonly string CreateDocsRepoDir = Path.Combine(InstallDir, "aidd-create-docs");
+    private static readonly string AiddRepoDir = Path.Combine(InstallDir, "aidd-script");
     private static readonly string TemplateRepoDir = Path.Combine(InstallDir, "aidd-template");
     private static readonly string DocsRepoDir = Path.Combine(InstallDir, "aidd-docs");
 
@@ -151,6 +152,7 @@ internal static class Program
 
         var harnessChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "ai-harness-main"), branch, HarnessRepoDir, "ai-harness-main");
         var createDocsChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-create-docs"), branch, CreateDocsRepoDir, "aidd-create-docs");
+        var aiddChanged = SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-script"), branch, AiddRepoDir, "aidd-script");
         SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-template"), branch, TemplateRepoDir, "aidd-template");
         SyncRepo(BuildRepoUrl(protocol, sshName, org, "aidd-docs"), branch, DocsRepoDir, "aidd-docs");
 
@@ -179,6 +181,17 @@ internal static class Program
         }
         if (harnessNeedsPublish) RestartAiHarnessMain();
 
+        // aidd 自身は最後に更新する（実行中のこのプロセスは旧版のまま終了し、次回から新版になる）
+        if (aiddChanged || !File.Exists(ExePath(AiddRepoDir, "aidd")))
+        {
+            PublishDotnetTool(
+                AiddRepoDir, "aidd",
+                csprojRelative: "src/main/aidd.csproj",
+                pluginDirPrefix: null,
+                baselibFileName: null,
+                selfExtract: false);
+        }
+
         Log("アップデート完了。");
     }
 
@@ -206,10 +219,18 @@ internal static class Program
     // repoDir（~/.aidd/<repo> の clone）からビルドし、成果物を repoDir/publish へ発行する。
     private static void PublishDotnetTool(
         string repoDir, string exeName,
-        string csprojRelative, string pluginDirPrefix, string baselibFileName, bool selfExtract)
+        string csprojRelative, string? pluginDirPrefix, string? baselibFileName, bool selfExtract)
     {
         var installDir = PublishDir(repoDir);
         Log($"{exeName} を {installDir} へ再発行します…");
+
+        // 実行中の exe は Windows では上書き・削除できないが、名前の変更はできる。aidd 自身を
+        // 再発行する場合に備え、先に退避する（.old は次回の再発行で削除される）。
+        var currentExe = ExePath(repoDir, exeName);
+        if (File.Exists(currentExe))
+        {
+            File.Move(currentExe, currentExe + ".old", overwrite: true);
+        }
         // 失敗した発行の残骸を「発行済み」と取り違えないよう、先に消す
         TryDelete(installDir);
         Directory.CreateDirectory(installDir);
@@ -233,24 +254,28 @@ internal static class Program
         publishArgs.AddRange(["-tl:off", "-o", installDir]);
         Run("dotnet", [.. publishArgs]);
 
-        var libDir = Path.Combine(installDir, "lib");
-        Directory.CreateDirectory(libDir);
-
-        var pluginsRoot = Path.Combine(repoDir, "src", "plugins");
-        if (Directory.Exists(pluginsRoot))
+        // プラグインを持つツール（ai-harness-main / aidd-create-docs）だけ lib/ を作る
+        if (pluginDirPrefix is not null && baselibFileName is not null)
         {
-            foreach (var dir in Directory.GetDirectories(pluginsRoot, pluginDirPrefix + "*"))
-            {
-                var csprojFile = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
-                if (csprojFile is null) continue;
-                Log($"  同梱プラグインをビルドします: {Path.GetFileName(dir)}");
-                Run("dotnet", "build", csprojFile, "-c", "Release", "-tl:off", "-o", libDir);
-            }
-        }
+            var libDir = Path.Combine(installDir, "lib");
+            Directory.CreateDirectory(libDir);
 
-        // baselib は host / 本体が共有ロードするため lib/ には置かない
-        var baselibPath = Path.Combine(libDir, baselibFileName);
-        if (File.Exists(baselibPath)) File.Delete(baselibPath);
+            var pluginsRoot = Path.Combine(repoDir, "src", "plugins");
+            if (Directory.Exists(pluginsRoot))
+            {
+                foreach (var dir in Directory.GetDirectories(pluginsRoot, pluginDirPrefix + "*"))
+                {
+                    var csprojFile = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
+                    if (csprojFile is null) continue;
+                    Log($"  同梱プラグインをビルドします: {Path.GetFileName(dir)}");
+                    Run("dotnet", "build", csprojFile, "-c", "Release", "-tl:off", "-o", libDir);
+                }
+            }
+
+            // baselib は host / 本体が共有ロードするため lib/ には置かない
+            var baselibPath = Path.Combine(libDir, baselibFileName);
+            if (File.Exists(baselibPath)) File.Delete(baselibPath);
+        }
 
         var exePath = ExePath(repoDir, exeName);
         if (!File.Exists(exePath))

@@ -57,6 +57,7 @@ $InstallDir = Join-Path $env:USERPROFILE '.aidd'
 # しまう（プラグインローダは lib/ 配下の *.dll を全走査するため）。ツールごとに別の
 # publish/ を持たせ、発行先・PATH 登録とも独立させる。
 $AiddRepoDir = Join-Path $InstallDir 'aidd-script'
+$TemplateRepoDir = Join-Path $InstallDir 'aidd-template'
 $AiddInstallDir = Join-Path $AiddRepoDir 'publish'
 $HarnessInstallDir = Join-Path $InstallDir 'ai-harness-main\publish'
 $CreateDocsInstallDir = Join-Path $InstallDir 'aidd-create-docs\publish'
@@ -113,8 +114,9 @@ function Install-DotNetSdk {
     }
 }
 
-# aidd CLI 自身は aidd --update-aidd の対象外（自己更新はしない）ため、setup が更新する。
-# clone と remote の差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
+# aidd CLI の初回導入（以降の更新は aidd --update-aidd が行う）。再実行時は旧版の aidd で
+# 引数が通らない問題を避けるため、ここでも clone と remote の差分確認をする。
+# 差分があるとき、または発行物が無いときだけ発行する（差分が無ければ読み飛ばす）。
 function Build-Aidd {
     $exePath = Join-Path $AiddInstallDir 'aidd.exe'
     $changed = $false
@@ -162,6 +164,41 @@ function Build-Aidd {
     Write-Step "aidd を発行しました: $exePath"
 }
 
+# aidd-template を ~/.aidd/aidd-template へ clone する（aidd --init が中身をコピーする）。
+# 既にあれば remote を指定どおりに揃えて fetch し、差分があるときだけ更新する。
+function Sync-Template {
+    $url = switch ($Protocol) {
+        'https' { "https://github.com/$Org/aidd-template.git" }
+        'ssh'   {
+            $sshHost = if ($SshName) { $SshName } else { 'github.com' }
+            "git@${sshHost}:$Org/aidd-template.git"
+        }
+    }
+
+    if (-not (Test-Path (Join-Path $TemplateRepoDir '.git'))) {
+        Write-Step "aidd-template を $TemplateRepoDir へ clone します（branch: $Branch）…"
+        Remove-Item -Recurse -Force $TemplateRepoDir -ErrorAction SilentlyContinue
+        & git clone --quiet --depth 1 --branch $Branch $url $TemplateRepoDir
+        if ($LASTEXITCODE -ne 0) { throw 'aidd-template のクローンに失敗しました。' }
+        return
+    }
+
+    & git -C $TemplateRepoDir remote set-url origin $url
+    if ($LASTEXITCODE -ne 0) { throw 'git remote set-url に失敗しました。' }
+    & git -C $TemplateRepoDir fetch --quiet --depth 1 origin $Branch
+    if ($LASTEXITCODE -ne 0) { throw 'aidd-template の fetch に失敗しました。' }
+    $head = (& git -C $TemplateRepoDir rev-parse HEAD)
+    $remote = (& git -C $TemplateRepoDir rev-parse FETCH_HEAD)
+    if ($head -ne $remote) {
+        Write-Step 'aidd-template に差分があります。更新します…'
+        & git -C $TemplateRepoDir reset --quiet --hard FETCH_HEAD
+        if ($LASTEXITCODE -ne 0) { throw 'git reset に失敗しました。' }
+    }
+    else {
+        Write-Step 'aidd-template: OK（差分なし）'
+    }
+}
+
 function Add-InstallDirToUserPath([string]$Dir) {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $parts = @($userPath -split ';' | Where-Object { $_ -ne '' })
@@ -192,6 +229,7 @@ function Update-ToolSuite {
 Install-Git
 Install-DotNetSdk
 Build-Aidd
+Sync-Template
 Update-ToolSuite
 
 $exe = Join-Path $HarnessInstallDir 'ai-harness-main.exe'

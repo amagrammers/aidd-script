@@ -14,8 +14,9 @@ aidd のツール（ai-harness-main / aidd-create-docs / aidd-template / aidd-do
 
 1. git / .NET SDK 10 の確認・導入
 2. `aidd-script` 自身を `~/.aidd/aidd-script` へ clone し、そこから `aidd` CLI を `~/.aidd/aidd-script/publish` へ発行
-3. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-template / aidd-docs）を clone・発行
-4. 各ツールの `publish/` を PATH へ追加し、`aidd --version` / `ai-harness-main --doctor` / `aidd-create-docs --version` で動作確認
+3. `aidd-template` を `~/.aidd/aidd-template` へ clone（既にあれば差分があるときだけ更新。`aidd --init` が中身をコピーする）
+4. `aidd --update-aidd` で `~/.aidd` のツール一式（ai-harness-main / aidd-create-docs / aidd-template / aidd-docs / aidd-script）を clone・発行
+5. 各ツールの `publish/` を PATH へ追加し、`aidd --version` / `ai-harness-main --doctor` / `aidd-create-docs --version` で動作確認
 
 プロジェクトには触れない（プロジェクトの配線・初期化は行わない）。
 
@@ -65,11 +66,13 @@ aidd --update-project
   （`.docs/` として配置）をカレントディレクトリへコピーする。`aidd-template` 側の `.git/` と `.docs/` は
   コピーしない。`~/.aidd` に無ければ `aidd --update-aidd` を先に実行するよう促して中断する。書き込み前に
   衝突を全件検査し、既存ファイルと衝突するものが 1 つでもあれば何も変更せず中断する
-- **`aidd --update-aidd`** — `~/.aidd/<repo>` に ai-harness-main・aidd-create-docs・aidd-template・aidd-docs の clone を
-  置き、指定した org/branch と比べて**差分があるときだけ**更新する（`git fetch` → HEAD と比較 →
-  差分があれば `reset --hard` で揃える。ローカル変更は破棄される）。差分が無ければ何もしない。
-  ai-harness-main・aidd-create-docs は更新があったとき、または発行物が無いときに clone 内からビルドし、
-  self-contained 単一ファイルとして `<repo>/publish/` へ再発行する。aidd-template・aidd-docs はビルドしない。
+- **`aidd --update-aidd`** — `~/.aidd/<repo>` に ai-harness-main・aidd-create-docs・aidd-script・aidd-template・
+  aidd-docs の clone を置き、指定した org/branch と比べて**差分があるときだけ**更新する（`git fetch` →
+  HEAD と比較 → 差分があれば `reset --hard` で揃える。ローカル変更は破棄される）。差分が無ければ何もしない。
+  ai-harness-main・aidd-create-docs・aidd-script（aidd 自身）は更新があったとき、または発行物が無いときに
+  clone 内からビルドし、self-contained 単一ファイルとして `<repo>/publish/` へ再発行する。
+  aidd 自身の再発行は最後に行い、実行中のプロセスは旧版のまま終了する（次回から新版）。実行中の exe は
+  上書きできないため、既存の exe を `.old` へ改名してから発行する。aidd-template・aidd-docs はビルドしない。
   clone を持たない旧配置があれば削除して clone し直す
 - **`aidd --update-project`** — 引数なし。取得はせず、`~/.aidd/aidd-docs/core` でカレントディレクトリの
   `.docs/` を丸ごと置換する（`.docs/` にしか無いファイルは消える）。`~/.aidd` に無ければ
@@ -79,7 +82,7 @@ aidd --update-project
 
 ```
 ~/.aidd/
-  aidd-script/        clone（setup が配置・更新する。`--update-aidd` の対象外）
+  aidd-script/        clone（setup が初回に配置。以降は `--update-aidd` が更新・再発行する）
     publish/          aidd 実行体（PATH）
   ai-harness-main/    clone
     publish/          ai-harness-main 実行体と lib/（PATH）
