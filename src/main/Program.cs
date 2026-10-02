@@ -345,6 +345,7 @@ internal static class Program
         var templateFiles = Directory.EnumerateFiles(TemplateRepoDir, "*", SearchOption.AllDirectories)
             .Where(f => !IsUnderTopLevelDir(TemplateRepoDir, f, ".git"))
             .Where(f => !IsUnderTopLevelDir(TemplateRepoDir, f, ".docs"))
+            .Where(f => !IsTopLevelFile(TemplateRepoDir, f, "README.md"))
             .Select(f => (Source: f, Target: Path.Combine(dest, Path.GetRelativePath(TemplateRepoDir, f))))
             .ToList();
 
@@ -355,22 +356,30 @@ internal static class Program
         var all = templateFiles.Concat(docsFiles).ToList();
 
         // 一部だけ書いて失敗する状態を避けるため、書き込み前に全件の衝突を検査する
-        var conflicts = all.Select(x => x.Target).Where(File.Exists).ToList();
+        // 既存のファイル・ディレクトリは上書きしない。template と docs の出力先が重なる場合も上書きになるため衝突とみなす
+        var conflicts = all.Select(x => x.Target)
+            .Where(t => File.Exists(t) || Directory.Exists(t))
+            .Concat(all.GroupBy(x => x.Target).Where(g => g.Count() > 1).Select(g => g.Key))
+            .Distinct()
+            .ToList();
         if (conflicts.Count > 0)
         {
             var list = string.Join("\n", conflicts.Select(c => "            " + c));
-            throw new AiddException($"以下のファイルが既に存在するため中断しました。何も変更していません:\n{list}");
+            throw new AiddException($"以下のパスが既に存在する、または出力先が重複するため中断しました。何も変更していません:\n{list}");
         }
 
         foreach (var (src, target) in all)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(src, target);
+            File.Copy(src, target, overwrite: false);
         }
 
         Log($"aidd-template から {templateFiles.Count} ファイル、aidd-docs/core から {docsFiles.Count} " +
             $"ファイルを {dest} へコピーしました。");
     }
+
+    private static bool IsTopLevelFile(string root, string filePath, string fileName)
+        => Path.GetRelativePath(root, filePath) == fileName;
 
     private static bool IsUnderTopLevelDir(string root, string filePath, string topLevelName)
     {

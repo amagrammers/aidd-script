@@ -73,8 +73,10 @@ aidd --update-project
 
 - **`aidd --init`** — 引数なし。取得はせず、`~/.aidd/aidd-template` の中身と `~/.aidd/aidd-docs/core`
   （`.docs/` として配置）をカレントディレクトリへコピーする。`aidd-template` 側の `.git/` と `.docs/` は
-  コピーしない。`~/.aidd` に無ければ `aidd --update-aidd` を先に実行するよう促して中断する。書き込み前に
-  衝突を全件検査し、既存ファイルと衝突するものが 1 つでもあれば何も変更せず中断する
+  コピーしない。ルートの `README.md` も対象外（プロジェクト側の README を巻き込まない）。`~/.aidd` に無ければ
+  `aidd --update-aidd` を先に実行するよう促して中断する。上書きはしない。書き込み前に衝突を全件検査し、
+  既存のファイル・ディレクトリと衝突する、またはコピー元同士で出力先が重なるものが 1 つでもあれば
+  何も変更せず中断する
 - **`aidd --update-aidd`** — `~/.aidd/<repo>` に ai-harness-main・aidd-create-docs・aidd-script・aidd-template・
   aidd-docs の clone を置き、指定した org/branch と比べて**差分があるときだけ**更新する（`git fetch` →
   HEAD と比較 → 差分があれば `reset --hard` で揃える。ローカル変更は破棄される）。差分が無ければ何もしない。
