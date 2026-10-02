@@ -87,7 +87,12 @@ aidd --update-project
   clone を持たない旧配置があれば削除して clone し直す
 - **`aidd --update-project`** — 引数なし。取得はせず、`~/.aidd/aidd-docs/core` でカレントディレクトリの
   `.docs/` を丸ごと置換する（`.docs/` にしか無いファイルは消える）。`~/.aidd` に無ければ
-  `aidd --update-aidd` を先に実行するよう促して中断する。途中で失敗しても既存の `.docs/` は残る
+  `aidd --update-aidd` を先に実行するよう促して中断する。途中で失敗しても既存の `.docs/` は残る。
+  あわせて `~/.aidd/aidd-template` の `.claude/` と `.codex/` を、**テンプレートに存在するファイル単位**で
+  上書きコピーする（ディレクトリ単位の置換・削除はしない。プロジェクト側で足した skills / agents / rules
+  などテンプレートに無いファイルは触らない）。`.claude/settings.json` と `.codex/hooks.json` は利用者が
+  手を入れるため、既存なら上書きしない（無ければ作る）。`.claude/settings.local.json` と
+  `.claude/harness/logs/` は対象外。テンプレート側で削除・改名したファイルはプロジェクト側に残る
 
 ### `~/.aidd` の構成
 

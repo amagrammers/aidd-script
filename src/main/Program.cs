@@ -402,6 +402,10 @@ internal static class Program
         {
             throw new AiddException($"{docsCoreDir} がありません。先に aidd --update-aidd を実行してください。");
         }
+        if (!Directory.Exists(TemplateRepoDir))
+        {
+            throw new AiddException($"{TemplateRepoDir} がありません。先に aidd --update-aidd を実行してください。");
+        }
 
         var target = Path.Combine(Directory.GetCurrentDirectory(), ".docs");
         // 途中で失敗しても既存の .docs/ を失わないよう、隣へ全件コピーしてから差し替える。
@@ -426,6 +430,51 @@ internal static class Program
         {
             TryDelete(staging);
             throw;
+        }
+
+        UpdateToolDirs();
+    }
+
+    // aidd-template の .claude/ と .codex/ を、テンプレートに存在するファイル単位で上書きする。
+    // ディレクトリ単位の置換や削除はしない（利用者・他者が足した skills / agents / rules を巻き込まないため）。
+    // 利用者が手を入れる設定（settings.json / hooks.json）は既存なら上書きせず、ログ類は対象外。
+    private static void UpdateToolDirs()
+    {
+        var dest = Directory.GetCurrentDirectory();
+        string[] toolDirs = [".claude", ".codex"];
+        string[] keepIfExists = [".claude/settings.json", ".codex/hooks.json"];
+        string[] excludedDirs = [".claude/harness/logs"];
+        string[] excludedFiles = [".claude/settings.local.json"];
+
+        var copied = 0;
+        var kept = new List<string>();
+        foreach (var dir in toolDirs)
+        {
+            var srcRoot = Path.Combine(TemplateRepoDir, dir);
+            if (!Directory.Exists(srcRoot)) continue;
+
+            foreach (var src in Directory.EnumerateFiles(srcRoot, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(TemplateRepoDir, src).Replace('\\', '/');
+                if (excludedFiles.Contains(rel)) continue;
+                if (excludedDirs.Any(d => rel.StartsWith(d + "/", StringComparison.Ordinal))) continue;
+
+                var target = Path.Combine(dest, rel.Replace('/', Path.DirectorySeparatorChar));
+                if (keepIfExists.Contains(rel) && File.Exists(target))
+                {
+                    kept.Add(rel);
+                    continue;
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(src, target, overwrite: true);
+                copied++;
+            }
+        }
+
+        Log($"aidd-template の .claude/ .codex/ から {copied} ファイルを {dest} へ上書きコピーしました（テンプレートに無いファイルは触りません）。");
+        foreach (var rel in kept)
+        {
+            Log($"  既存のため上書きしませんでした: {rel}");
         }
     }
 
